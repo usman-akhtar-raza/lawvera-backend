@@ -1,4 +1,12 @@
-import { Body, Controller, Post, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
 import { ChatService } from './chat.service';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
@@ -15,5 +23,29 @@ export class ChatController {
     @Body() dto: AskQuestionDto,
   ) {
     return this.chatService.ask(user.userId, dto);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('sessions')
+  getSessions(@CurrentUser() user: { userId: string }) {
+    return this.chatService.getSessions(user.userId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('sessions/:sessionId')
+  getSessionHistory(
+    @CurrentUser() user: { userId: string },
+    @Param('sessionId') sessionId: string,
+  ) {
+    return this.chatService.getSessionHistory(user.userId, sessionId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Delete('sessions/:sessionId')
+  deleteSession(
+    @CurrentUser() user: { userId: string },
+    @Param('sessionId') sessionId: string,
+  ) {
+    return this.chatService.deleteSession(user.userId, sessionId);
   }
 }

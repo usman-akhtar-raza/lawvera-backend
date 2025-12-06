@@ -67,6 +67,56 @@ export class ChatService {
     };
   }
 
+  async getSessions(userId: string) {
+    const userObjectId = new Types.ObjectId(userId);
+    const sessions = await this.chatModel
+      .aggregate([
+        { $match: { user: userObjectId } },
+        { $sort: { createdAt: 1 } },
+        {
+          $group: {
+            _id: '$sessionId',
+            firstMessage: { $first: '$$ROOT' },
+            lastMessage: { $last: '$$ROOT' },
+            messageCount: { $sum: 1 },
+          },
+        },
+        { $sort: { 'lastMessage.createdAt': -1 } },
+      ])
+      .exec();
+
+    return sessions.map((session) => ({
+      sessionId: session._id as string,
+      title: this.buildSessionTitle(session.firstMessage?.content),
+      lastMessagePreview: this.buildPreview(session.lastMessage?.content),
+      updatedAt:
+        session.lastMessage?.createdAt ??
+        session.firstMessage?.createdAt ??
+        new Date(),
+      messageCount: session.messageCount,
+    }));
+  }
+
+  async getSessionHistory(userId: string, sessionId: string) {
+    const userObjectId = new Types.ObjectId(userId);
+    return this.chatModel
+      .find({ sessionId, user: userObjectId })
+      .sort({ createdAt: 1 })
+      .lean();
+  }
+
+  async deleteSession(userId: string, sessionId: string) {
+    const userObjectId = new Types.ObjectId(userId);
+    const result = await this.chatModel.deleteMany({
+      sessionId,
+      user: userObjectId,
+    });
+    return {
+      sessionId,
+      deleted: result.deletedCount ?? 0,
+    };
+  }
+
   private persistMessage(
     sessionId: string,
     userId: string,
@@ -79,5 +129,35 @@ export class ChatService {
       role,
       content,
     });
+  }
+
+  private buildSessionTitle(content?: string | null) {
+    if (!content) {
+      return 'New conversation';
+    }
+
+    const normalized = content.trim().replace(/\s+/g, ' ');
+    if (!normalized.length) {
+      return 'New conversation';
+    }
+
+    return normalized.length > 60
+      ? `${normalized.slice(0, 57)}...`
+      : normalized;
+  }
+
+  private buildPreview(content?: string | null) {
+    if (!content) {
+      return '';
+    }
+
+    const normalized = content.trim().replace(/\s+/g, ' ');
+    if (!normalized.length) {
+      return '';
+    }
+
+    return normalized.length > 120
+      ? `${normalized.slice(0, 117)}...`
+      : normalized;
   }
 }

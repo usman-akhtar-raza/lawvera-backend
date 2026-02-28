@@ -8,6 +8,8 @@ import { UserModule } from './user/user.module';
 import { LawyerModule } from './lawyer/lawyer.module';
 import { BookingModule } from './booking/booking.module';
 import { ChatModule } from './chat/chat.module';
+import { PrismaModule } from './database/prisma.module';
+import { LawSourcesModule } from './law-sources/law-sources.module';
 
 @Module({
   imports: [
@@ -20,11 +22,13 @@ import { ChatModule } from './chat/chat.module';
         uri: configService.get<string>('MONGO_URI'),
       }),
     }),
+    PrismaModule,
     AuthModule,
     UserModule,
     LawyerModule,
     BookingModule,
     ChatModule,
+    LawSourcesModule,
   ],
   controllers: [AppController],
   providers: [AppService],

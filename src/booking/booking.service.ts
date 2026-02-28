@@ -107,9 +107,15 @@ export class BookingService {
       const lawyerProfile = await this.lawyerModel.findOne({
         user: actor.userId,
       });
+      const bookingLawyerId =
+        typeof booking.lawyer === 'object' &&
+        booking.lawyer !== null &&
+        '_id' in (booking.lawyer as any)
+          ? String((booking.lawyer as any)._id)
+          : String(booking.lawyer);
       if (
         !lawyerProfile ||
-        booking.lawyer.toString() !== lawyerProfile._id.toString()
+        bookingLawyerId !== lawyerProfile._id.toString()
       ) {
         throw new UnauthorizedException();
       }
@@ -117,7 +123,14 @@ export class BookingService {
       throw new UnauthorizedException();
     }
 
-    const lawyerProfileDoc = await this.lawyerModel.findById(booking.lawyer);
+    const lawyerRef =
+      typeof booking.lawyer === 'object' &&
+      booking.lawyer !== null &&
+      '_id' in (booking.lawyer as any)
+        ? (booking.lawyer as any)._id
+        : booking.lawyer;
+
+    const lawyerProfileDoc = await this.lawyerModel.findById(lawyerRef);
 
     booking.status = dto.status;
     booking.notes = dto.notes ?? booking.notes;

@@ -20,7 +20,8 @@ import { UserRole } from '../common/enums/role.enum';
 export class BookingController {
   constructor(private readonly bookingService: BookingService) {}
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.CLIENT)
   @Post()
   create(
     @CurrentUser() user: { userId: string },
@@ -29,7 +30,8 @@ export class BookingController {
     return this.bookingService.create(user.userId, dto);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.CLIENT)
   @Get('client/me')
   myBookings(@CurrentUser() user: { userId: string }) {
     return this.bookingService.getClientBookings(user.userId);
@@ -53,7 +55,8 @@ export class BookingController {
     return this.bookingService.updateStatus(id, dto, user);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.CLIENT, UserRole.LAWYER, UserRole.ADMIN)
   @Patch(':id/cancel')
   cancel(
     @Param('id') id: string,

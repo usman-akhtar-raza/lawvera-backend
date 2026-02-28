@@ -11,6 +11,7 @@ import { ChatService } from './chat.service';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { AskQuestionDto } from './dto/ask-question.dto';
+import { UserRole } from '../common/enums/role.enum';
 
 @Controller('chat')
 export class ChatController {
@@ -19,10 +20,10 @@ export class ChatController {
   @UseGuards(JwtAuthGuard)
   @Post('ask')
   ask(
-    @CurrentUser() user: { userId: string },
+    @CurrentUser() user: { userId: string; role: UserRole },
     @Body() dto: AskQuestionDto,
   ) {
-    return this.chatService.ask(user.userId, dto);
+    return this.chatService.ask(user.userId, user.role, dto);
   }
 
   @UseGuards(JwtAuthGuard)

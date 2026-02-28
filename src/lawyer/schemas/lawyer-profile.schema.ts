@@ -81,3 +81,5 @@ export class LawyerProfile {
 
 export const LawyerProfileSchema = SchemaFactory.createForClass(LawyerProfile);
 
+LawyerProfileSchema.index({ status: 1, specialization: 1, city: 1 });
+LawyerProfileSchema.index({ ratingAverage: -1 });

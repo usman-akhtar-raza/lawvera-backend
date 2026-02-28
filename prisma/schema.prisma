@@ -1,0 +1,54 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum LawSourceStatus {
+  active
+  disabled
+}
+
+enum IngestionStatus {
+  uploaded
+  extracting
+  embedding
+  indexing
+  ready
+  needs_ocr
+  failed
+}
+
+model LawSource {
+  id              String          @id @default(uuid())
+  title           String
+  edition         String?
+  jurisdiction    String?
+  language        String?
+  status          LawSourceStatus @default(active)
+  filePath        String
+  fileHash        String          @unique
+  ingestionStatus IngestionStatus @default(uploaded)
+  warningText     String?
+  chunkCount      Int             @default(0)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  chunks          LawChunk[]
+
+  @@index([status, createdAt])
+}
+
+model LawChunk {
+  id           String                   @id @default(uuid())
+  sourceId     String
+  chunkText    String
+  metadataJson Json?
+  embedding    Unsupported("vector(1536)")?
+  createdAt    DateTime                 @default(now())
+  source       LawSource                @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+
+  @@index([sourceId, createdAt])
+}

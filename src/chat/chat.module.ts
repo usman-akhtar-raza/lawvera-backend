@@ -4,15 +4,13 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { ChatController } from './chat.controller';
 import { ChatService } from './chat.service';
 import { ChatMessage, ChatMessageSchema } from './schemas/chat-message.schema';
-import { User, UserSchema } from '../user/schemas/user.schema';
+import { LawSourcesModule } from '../law-sources/law-sources.module';
 
 @Module({
   imports: [
     ConfigModule,
-    MongooseModule.forFeature([
-      { name: ChatMessage.name, schema: ChatMessageSchema },
-      { name: User.name, schema: UserSchema },
-    ]),
+    LawSourcesModule,
+    MongooseModule.forFeature([{ name: ChatMessage.name, schema: ChatMessageSchema }]),
   ],
   controllers: [ChatController],
   providers: [ChatService],

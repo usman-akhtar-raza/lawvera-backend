@@ -36,7 +36,8 @@ export class LawyerController {
     return this.lawyerService.findById(id);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.LAWYER)
   @Get('me/profile')
   myProfile(@CurrentUser() user: { userId: string }) {
     return this.lawyerService.findByUserId(user.userId);
@@ -56,7 +57,8 @@ export class LawyerController {
     return this.lawyerService.update(id, dto);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.LAWYER)
   @Patch('me/availability')
   updateAvailability(
     @CurrentUser() user: { userId: string },
@@ -65,7 +67,8 @@ export class LawyerController {
     return this.lawyerService.updateAvailability(user.userId, dto);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.CLIENT)
   @Post(':id/reviews')
   addReview(
     @Param('id') lawyerId: string,
@@ -118,7 +121,8 @@ export class LawyerController {
     return this.lawyerService.removeSpecialization(id);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.LAWYER)
   @Get('me/dashboard')
   dashboard(@CurrentUser() user: { userId: string }) {
     return this.lawyerService.getDashboard(user.userId);

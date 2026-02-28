@@ -11,6 +11,7 @@ import {
   LawyerProfileSchema,
 } from '../lawyer/schemas/lawyer-profile.schema';
 import { JwtStrategy } from './strategies/jwt.strategy';
+import { AuthRateLimitGuard } from './guards/auth-rate-limit.guard';
 
 @Module({
   imports: [
@@ -33,7 +34,7 @@ import { JwtStrategy } from './strategies/jwt.strategy';
     ]),
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy],
+  providers: [AuthService, JwtStrategy, AuthRateLimitGuard],
   exports: [AuthService],
 })
 export class AuthModule {}

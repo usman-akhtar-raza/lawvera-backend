@@ -100,9 +100,18 @@ export class AuthService {
   }
 
   async refreshTokens(dto: RefreshTokenDto) {
-    const payload = this.jwtService.decode(dto.refreshToken) as
-      | JwtPayload
-      | null;
+    let payload: JwtPayload;
+    try {
+      payload = await this.jwtService.verifyAsync<JwtPayload>(
+        dto.refreshToken,
+        {
+          secret: this.configService.getOrThrow<string>('JWT_REFRESH_SECRET'),
+          algorithms: ['HS256'],
+        },
+      );
+    } catch {
+      throw new UnauthorizedException('Invalid refresh token');
+    }
 
     if (!payload?.sub) {
       throw new UnauthorizedException('Invalid refresh token');
@@ -110,6 +119,10 @@ export class AuthService {
 
     const user = await this.userModel.findById(payload.sub);
     if (!user || !user.refreshTokenHash) {
+      throw new UnauthorizedException('Invalid refresh token');
+    }
+
+    if (payload.email !== user.email || payload.role !== user.role) {
       throw new UnauthorizedException('Invalid refresh token');
     }
 

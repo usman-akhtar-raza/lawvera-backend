@@ -6,26 +6,31 @@ import { LoginDto } from './dto/login.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { AuthRateLimitGuard } from './guards/auth-rate-limit.guard';
 
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
+  @UseGuards(AuthRateLimitGuard)
   @Post('register/client')
   registerClient(@Body() dto: RegisterClientDto) {
     return this.authService.registerClient(dto);
   }
 
+  @UseGuards(AuthRateLimitGuard)
   @Post('register/lawyer')
   registerLawyer(@Body() dto: RegisterLawyerDto) {
     return this.authService.registerLawyer(dto);
   }
 
+  @UseGuards(AuthRateLimitGuard)
   @Post('login')
   login(@Body() dto: LoginDto) {
     return this.authService.login(dto);
   }
 
+  @UseGuards(AuthRateLimitGuard)
   @Post('refresh')
   refresh(@Body() dto: RefreshTokenDto) {
     return this.authService.refreshTokens(dto);

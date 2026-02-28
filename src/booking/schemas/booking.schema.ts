@@ -18,7 +18,11 @@ export class Booking {
   @Prop({ required: true })
   slotTime: string; // e.g. '10:00 AM'
 
-  @Prop({ required: true })
+  @Prop({
+    type: String,
+    enum: Object.values(BookingStatus),
+    required: true,
+  })
   status: BookingStatus;
 
   @Prop()
@@ -29,4 +33,3 @@ export class Booking {
 }
 
 export const BookingSchema = SchemaFactory.createForClass(Booking);
-

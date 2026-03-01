@@ -18,8 +18,8 @@ async function seedAdmin() {
   const UserModel = mongoose.model(User.name, UserSchema);
 
   const hashedPassword = await bcrypt.hash(password, 10);
-
   const existing = await UserModel.findOne({ email });
+
   if (existing) {
     existing.role = UserRole.ADMIN;
     existing.password = hashedPassword;

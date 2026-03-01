@@ -4,7 +4,7 @@ import { Prisma, type IngestionStatus } from '@prisma/client';
 import OpenAI from 'openai';
 import { readFile } from 'node:fs/promises';
 import { extname } from 'node:path';
-import * as pdfParseModule from 'pdf-parse';
+import { PDFParse } from 'pdf-parse';
 import { PrismaService } from '../database/prisma.service';
 import { DEFAULT_EMBEDDING_MODEL } from './law-sources.constants';
 
@@ -171,12 +171,13 @@ export class IngestionProcessorService {
     const extension = extname(filePath).toLowerCase();
 
     if (extension === '.pdf') {
-      const parseFn = (
-        (pdfParseModule as unknown as { default?: (buffer: Buffer) => Promise<{ text?: string }> }).default ??
-        (pdfParseModule as unknown as (buffer: Buffer) => Promise<{ text?: string }>))
-      ;
-      const parsed = await parseFn(fileBuffer);
-      return parsed.text || '';
+      const parser = new PDFParse({ data: fileBuffer });
+      try {
+        const parsed = await parser.getText();
+        return parsed.text || '';
+      } finally {
+        await parser.destroy().catch(() => undefined);
+      }
     }
 
     return fileBuffer.toString('utf8');

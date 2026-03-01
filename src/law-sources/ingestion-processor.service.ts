@@ -126,7 +126,7 @@ export class IngestionProcessorService {
 
     const vectorLiteral = `[${embedding.join(',')}]`;
     await this.prisma.$executeRawUnsafe(
-      'UPDATE "LawChunk" SET "embedding" = $1::vector WHERE "id" = $2',
+      'UPDATE "LawChunk" SET "embedding" = $1::vector WHERE "id" = $2::uuid',
       vectorLiteral,
       chunk.id,
     );
@@ -134,7 +134,7 @@ export class IngestionProcessorService {
     const pendingRows = await this.prisma.$queryRaw<Array<{ count: bigint }>>(Prisma.sql`
       SELECT COUNT(*)::bigint AS count
       FROM "LawChunk"
-      WHERE "sourceId" = ${chunk.sourceId}
+      WHERE "sourceId" = ${chunk.sourceId}::uuid
       AND "embedding" IS NULL
     `);
 
@@ -153,7 +153,7 @@ export class IngestionProcessorService {
     const countRows = await this.prisma.$queryRaw<Array<{ count: bigint }>>(Prisma.sql`
       SELECT COUNT(*)::bigint AS count
       FROM "LawChunk"
-      WHERE "sourceId" = ${sourceId}
+      WHERE "sourceId" = ${sourceId}::uuid
     `);
 
     const chunkCount = Number(countRows[0]?.count ?? 0);

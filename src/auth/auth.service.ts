@@ -21,6 +21,11 @@ import { UserRole } from '../common/enums/role.enum';
 import { AuthTokens } from './interfaces/auth-tokens.interface';
 import { LawyerStatus } from '../common/enums/lawyer-status.enum';
 import { JwtPayload } from '../common/interfaces/jwt-payload.interface';
+import { OtpMailService } from './otp-mail.service';
+import { SendOtpDto } from './dto/send-otp.dto';
+import { VerifyOtpDto } from './dto/verify-otp.dto';
+
+const OTP_EXPIRY_MINUTES = 10;
 
 @Injectable()
 export class AuthService {
@@ -30,34 +35,53 @@ export class AuthService {
     private readonly lawyerModel: Model<LawyerProfileDocument>,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
+    private readonly otpMailService: OtpMailService,
   ) {}
 
   async registerClient(dto: RegisterClientDto) {
     const email = dto.email.toLowerCase();
     await this.ensureEmailAvailable(email);
     const password = await this.hashData(dto.password);
+
+    const otp = this.otpMailService.generateOtp();
+    const otpHash = await this.hashData(otp);
+
     const user = await this.userModel.create({
       ...dto,
       email,
       password,
       role: UserRole.CLIENT,
+      isEmailVerified: false,
+      otpCode: otpHash,
+      otpExpiresAt: new Date(Date.now() + OTP_EXPIRY_MINUTES * 60 * 1000),
     });
 
-    const tokens = await this.generateTokens(user);
-    await this.setRefreshToken(user.id, tokens.refreshToken);
-    return { user: this.sanitizeUser(user), tokens };
+    await this.otpMailService.sendOtp(email, otp);
+
+    return {
+      message: 'Registration successful. Please verify your email with the OTP sent.',
+      email: user.email,
+      requiresVerification: true,
+    };
   }
 
   async registerLawyer(dto: RegisterLawyerDto) {
     const email = dto.email.toLowerCase();
     await this.ensureEmailAvailable(email);
     const password = await this.hashData(dto.password);
+
+    const otp = this.otpMailService.generateOtp();
+    const otpHash = await this.hashData(otp);
+
     const user = await this.userModel.create({
       name: dto.name,
       email,
       password,
       role: UserRole.LAWYER,
       city: dto.city,
+      isEmailVerified: false,
+      otpCode: otpHash,
+      otpExpiresAt: new Date(Date.now() + OTP_EXPIRY_MINUTES * 60 * 1000),
     });
 
     await this.lawyerModel.create({
@@ -73,12 +97,12 @@ export class AuthService {
       status: LawyerStatus.PENDING,
     });
 
-    const tokens = await this.generateTokens(user);
-    await this.setRefreshToken(user.id, tokens.refreshToken);
+    await this.otpMailService.sendOtp(email, otp);
+
     return {
-      user: this.sanitizeUser(user),
-      tokens,
-      profileStatus: LawyerStatus.PENDING,
+      message: 'Registration successful. Please verify your email with the OTP sent.',
+      email: user.email,
+      requiresVerification: true,
     };
   }
 
@@ -93,10 +117,86 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
+    if (!user.isEmailVerified) {
+      return {
+        message: 'Email not verified. Please verify your email first.',
+        email: user.email,
+        requiresVerification: true,
+      };
+    }
+
     const tokens = await this.generateTokens(user);
     await this.setRefreshToken(user.id, tokens.refreshToken);
 
     return { user: this.sanitizeUser(user), tokens };
+  }
+
+  async sendOtp(dto: SendOtpDto) {
+    const user = await this.userModel.findOne({ email: dto.email.toLowerCase() });
+    if (!user) {
+      throw new BadRequestException('No account found with this email');
+    }
+
+    if (user.isEmailVerified) {
+      return { message: 'Email is already verified' };
+    }
+
+    const otp = this.otpMailService.generateOtp();
+    const otpHash = await this.hashData(otp);
+
+    user.otpCode = otpHash;
+    user.otpExpiresAt = new Date(Date.now() + OTP_EXPIRY_MINUTES * 60 * 1000);
+    await user.save();
+
+    await this.otpMailService.sendOtp(user.email, otp);
+
+    return { message: 'OTP sent successfully', email: user.email };
+  }
+
+  async verifyOtp(dto: VerifyOtpDto) {
+    const user = await this.userModel.findOne({ email: dto.email.toLowerCase() });
+    if (!user) {
+      throw new BadRequestException('No account found with this email');
+    }
+
+    if (user.isEmailVerified) {
+      const tokens = await this.generateTokens(user);
+      await this.setRefreshToken(user.id, tokens.refreshToken);
+      return { message: 'Email already verified', user: this.sanitizeUser(user), tokens };
+    }
+
+    if (!user.otpCode || !user.otpExpiresAt) {
+      throw new BadRequestException('No OTP found. Please request a new one.');
+    }
+
+    if (new Date() > user.otpExpiresAt) {
+      throw new BadRequestException('OTP has expired. Please request a new one.');
+    }
+
+    const otpMatches = await bcrypt.compare(dto.otp, user.otpCode);
+    if (!otpMatches) {
+      throw new BadRequestException('Invalid OTP');
+    }
+
+    user.isEmailVerified = true;
+    user.otpCode = undefined;
+    user.otpExpiresAt = undefined;
+    await user.save();
+
+    const tokens = await this.generateTokens(user);
+    await this.setRefreshToken(user.id, tokens.refreshToken);
+
+    const lawyerProfile =
+      user.role === UserRole.LAWYER
+        ? await this.lawyerModel.findOne({ user: user._id }).lean()
+        : null;
+
+    return {
+      message: 'Email verified successfully',
+      user: this.sanitizeUser(user),
+      tokens,
+      ...(lawyerProfile ? { lawyerProfile, profileStatus: LawyerStatus.PENDING } : {}),
+    };
   }
 
   async refreshTokens(dto: RefreshTokenDto) {

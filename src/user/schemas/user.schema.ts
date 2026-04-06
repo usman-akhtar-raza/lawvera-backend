@@ -29,6 +29,15 @@ export class User {
 
   @Prop()
   refreshTokenHash?: string;
+
+  @Prop({ default: false })
+  isEmailVerified: boolean;
+
+  @Prop()
+  otpCode?: string;
+
+  @Prop()
+  otpExpiresAt?: Date;
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);

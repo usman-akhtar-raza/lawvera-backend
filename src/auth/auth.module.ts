@@ -12,6 +12,7 @@ import {
 } from '../lawyer/schemas/lawyer-profile.schema';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { AuthRateLimitGuard } from './guards/auth-rate-limit.guard';
+import { OtpMailService } from './otp-mail.service';
 
 @Module({
   imports: [
@@ -34,7 +35,7 @@ import { AuthRateLimitGuard } from './guards/auth-rate-limit.guard';
     ]),
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy, AuthRateLimitGuard],
+  providers: [AuthService, JwtStrategy, AuthRateLimitGuard, OtpMailService],
   exports: [AuthService],
 })
 export class AuthModule {}

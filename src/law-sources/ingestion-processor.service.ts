@@ -4,15 +4,27 @@ import { Prisma, type IngestionStatus } from '@prisma/client';
 import OpenAI from 'openai';
 import { readFile } from 'node:fs/promises';
 import { extname } from 'node:path';
-import { PDFParse } from 'pdf-parse';
 import { PrismaService } from '../database/prisma.service';
 import { DEFAULT_EMBEDDING_MODEL } from './law-sources.constants';
+
+type PdfParseInstance = {
+  getText: () => Promise<{ text?: string }>;
+  destroy: () => Promise<void>;
+};
+
+type PdfParseConstructor = new (options: { data: Buffer; CanvasFactory?: unknown }) => PdfParseInstance;
+
+type PdfParseRuntime = {
+  PDFParse: PdfParseConstructor;
+  CanvasFactory?: unknown;
+};
 
 @Injectable()
 export class IngestionProcessorService {
   private readonly logger = new Logger(IngestionProcessorService.name);
   private readonly openai: OpenAI | null;
   private readonly embeddingModel: string;
+  private pdfParseRuntime: PdfParseRuntime | null = null;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -171,7 +183,11 @@ export class IngestionProcessorService {
     const extension = extname(filePath).toLowerCase();
 
     if (extension === '.pdf') {
-      const parser = new PDFParse({ data: fileBuffer });
+      const { PDFParse, CanvasFactory } = await this.getPdfParseRuntime();
+      const parser = new PDFParse({
+        data: fileBuffer,
+        ...(CanvasFactory ? { CanvasFactory } : {}),
+      });
       try {
         const parsed = await parser.getText();
         return parsed.text || '';
@@ -181,6 +197,33 @@ export class IngestionProcessorService {
     }
 
     return fileBuffer.toString('utf8');
+  }
+
+  private async getPdfParseRuntime(): Promise<PdfParseRuntime> {
+    if (this.pdfParseRuntime) {
+      return this.pdfParseRuntime;
+    }
+
+    try {
+      const workerModule = await import('pdf-parse/worker');
+      const pdfParseModule = await import('pdf-parse');
+      const PDFParse = (pdfParseModule as { PDFParse?: PdfParseConstructor }).PDFParse;
+      if (!PDFParse) {
+        throw new Error('Missing PDFParse export');
+      }
+
+      this.pdfParseRuntime = {
+        PDFParse,
+        CanvasFactory: (workerModule as { CanvasFactory?: unknown }).CanvasFactory,
+      };
+      return this.pdfParseRuntime;
+    } catch (error) {
+      this.logger.error(
+        'PDF parser dependency failed to load in current runtime. PDF ingestion is unavailable.',
+        error as Error,
+      );
+      throw new Error('PDF parser is unavailable in this runtime.');
+    }
   }
 
   private chunkText(input: string) {

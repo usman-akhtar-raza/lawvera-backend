@@ -10,6 +10,7 @@ import { BookingModule } from './booking/booking.module';
 import { ChatModule } from './chat/chat.module';
 import { PrismaModule } from './database/prisma.module';
 import { LawSourcesModule } from './law-sources/law-sources.module';
+import { CaseModule } from './case/case.module';
 
 @Module({
   imports: [
@@ -29,6 +30,7 @@ import { LawSourcesModule } from './law-sources/law-sources.module';
     BookingModule,
     ChatModule,
     LawSourcesModule,
+    CaseModule,
   ],
   controllers: [AppController],
   providers: [AppService],

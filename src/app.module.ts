@@ -11,6 +11,7 @@ import { ChatModule } from './chat/chat.module';
 import { PrismaModule } from './database/prisma.module';
 import { LawSourcesModule } from './law-sources/law-sources.module';
 import { CaseModule } from './case/case.module';
+import { CommunicationModule } from './communication/communication.module';
 
 @Module({
   imports: [
@@ -31,6 +32,7 @@ import { CaseModule } from './case/case.module';
     ChatModule,
     LawSourcesModule,
     CaseModule,
+    CommunicationModule,
   ],
   controllers: [AppController],
   providers: [AppService],

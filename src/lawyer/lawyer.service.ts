@@ -231,34 +231,26 @@ export class LawyerService {
   }
 
   async approveLawyer(lawyerId: string) {
-    const profile = await this.lawyerModel.findByIdAndUpdate(
-      lawyerId,
-      { status: LawyerStatus.APPROVED },
-      { new: true },
-    );
+    const profile = await this.lawyerModel
+      .findByIdAndUpdate(lawyerId, { status: LawyerStatus.APPROVED }, { new: true })
+      .populate<{ user: { _id: string; name: string; email: string } }>('user', 'name email');
     if (!profile) {
       throw new NotFoundException('Lawyer not found');
     }
-    await this.notificationService.notifyLawyer(
-      profile.user.toString(),
-      'Your Lawvera profile has been approved.',
-    );
+    await this.notificationService.sendApprovalEmail(profile.user.email, profile.user.name);
     return profile;
   }
 
   async rejectLawyer(lawyerId: string) {
-    const profile = await this.lawyerModel.findByIdAndUpdate(
-      lawyerId,
-      { status: LawyerStatus.REJECTED },
-      { new: true },
-    );
+    const profile = await this.lawyerModel
+      .findByIdAndUpdate(lawyerId, { status: LawyerStatus.REJECTED }, { new: true })
+      .populate<{ user: { _id: string; name: string; email: string } }>('user', 'name email');
     if (!profile) {
       throw new NotFoundException('Lawyer not found');
     }
-    await this.notificationService.notifyLawyer(
-      profile.user.toString(),
-      'Your Lawvera profile has been rejected.',
-    );
+    // Revert role to CLIENT so rejected lawyer is not locked out
+    await this.userModel.findByIdAndUpdate(profile.user._id, { role: UserRole.CLIENT });
+    await this.notificationService.sendRejectionEmail(profile.user.email, profile.user.name);
     return profile;
   }
 

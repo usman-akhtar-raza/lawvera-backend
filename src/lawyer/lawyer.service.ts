@@ -14,6 +14,7 @@ import {
   Specialization,
   SpecializationDocument,
 } from './schemas/specialization.schema';
+import { ApplyAsLawyerDto } from '../auth/dto/apply-as-lawyer.dto';
 import { CreateLawyerDto } from './dto/create-lawyer.dto';
 import { UpdateLawyerDto } from './dto/update-lawyer.dto';
 import { UpdateAvailabilityDto } from './dto/update-availability.dto';
@@ -21,6 +22,7 @@ import { SearchLawyersDto } from './dto/search-lawyers.dto';
 import { ManageSpecializationDto } from './dto/manage-specialization.dto';
 import { CreateReviewDto } from './dto/create-review.dto';
 import { LawyerStatus } from '../common/enums/lawyer-status.enum';
+import { UserRole } from '../common/enums/role.enum';
 import { User, UserDocument } from '../user/schemas/user.schema';
 import { NotificationService } from '../common/services/notification.service';
 import { Booking, BookingDocument } from '../booking/schemas/booking.schema';
@@ -38,6 +40,53 @@ export class LawyerService {
     private readonly bookingModel: Model<BookingDocument>,
     private readonly notificationService: NotificationService,
   ) {}
+
+  async applyAsLawyer(userId: string, dto: ApplyAsLawyerDto) {
+    const user = await this.userModel.findById(userId);
+    if (!user) {
+      throw new BadRequestException('User not found');
+    }
+    if (user.role !== UserRole.CLIENT) {
+      throw new BadRequestException('Only clients can apply to become a lawyer');
+    }
+
+    const existingProfile = await this.lawyerModel.findOne({ user: userId });
+    if (existingProfile) {
+      throw new BadRequestException('A lawyer profile already exists for this account');
+    }
+
+    user.role = UserRole.LAWYER;
+    await user.save();
+
+    const lawyerProfile = await this.lawyerModel.create({
+      user: user._id,
+      specialization: dto.specialization,
+      experienceYears: dto.experienceYears,
+      city: dto.city,
+      consultationFee: dto.consultationFee,
+      education: dto.education,
+      description: dto.description,
+      profilePhotoUrl: dto.profilePhotoUrl,
+      availability: dto.availability,
+      status: LawyerStatus.PENDING,
+    });
+
+    return { user, lawyerProfile };
+  }
+
+  async revertToClient(userId: string) {
+    const user = await this.userModel.findById(userId);
+    if (!user) {
+      throw new BadRequestException('User not found');
+    }
+    if (user.role !== UserRole.LAWYER) {
+      throw new BadRequestException('User is not currently a lawyer');
+    }
+    user.role = UserRole.CLIENT;
+    await user.save();
+    // LawyerProfile is intentionally kept in DB
+    return { user };
+  }
 
   async create(dto: CreateLawyerDto) {
     const user = await this.userModel.findById(dto.userId);

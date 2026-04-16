@@ -14,6 +14,7 @@ import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { UserRole } from '../common/enums/role.enum';
+import { ApplyAsLawyerDto } from '../auth/dto/apply-as-lawyer.dto';
 import { CreateLawyerDto } from './dto/create-lawyer.dto';
 import { UpdateLawyerDto } from './dto/update-lawyer.dto';
 import { UpdateAvailabilityDto } from './dto/update-availability.dto';
@@ -25,6 +26,21 @@ import { ManageSpecializationDto } from './dto/manage-specialization.dto';
 @Controller('lawyers')
 export class LawyerController {
   constructor(private readonly lawyerService: LawyerService) {}
+
+  @UseGuards(JwtAuthGuard)
+  @Post('apply')
+  applyAsLawyer(
+    @CurrentUser() user: { userId: string },
+    @Body() dto: ApplyAsLawyerDto,
+  ) {
+    return this.lawyerService.applyAsLawyer(user.userId, dto);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('revert-to-client')
+  revertToClient(@CurrentUser() user: { userId: string }) {
+    return this.lawyerService.revertToClient(user.userId);
+  }
 
   @Get()
   search(@Query() query: SearchLawyersDto) {

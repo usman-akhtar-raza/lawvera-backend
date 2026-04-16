@@ -67,9 +67,66 @@ export class AuthService {
 
   async registerLawyer(dto: RegisterLawyerDto) {
     const email = dto.email.toLowerCase();
-    await this.ensureEmailAvailable(email);
-    const password = await this.hashData(dto.password);
 
+    const existingUser = await this.userModel.findOne({ email });
+
+    if (existingUser) {
+      if (existingUser.role !== UserRole.CLIENT) {
+        throw new BadRequestException('This email is already registered with a different account type');
+      }
+
+      const existingProfile = await this.lawyerModel.findOne({ user: existingUser._id });
+      if (existingProfile) {
+        throw new BadRequestException('A lawyer profile already exists for this account');
+      }
+
+      const passwordMatches = await bcrypt.compare(dto.password, existingUser.password);
+      if (!passwordMatches) {
+        throw new BadRequestException('Incorrect password for the existing account');
+      }
+
+      existingUser.role = UserRole.LAWYER;
+      existingUser.city = dto.city || existingUser.city;
+      await existingUser.save();
+
+      await this.lawyerModel.create({
+        user: existingUser._id,
+        specialization: dto.specialization,
+        experienceYears: dto.experienceYears,
+        city: dto.city,
+        consultationFee: dto.consultationFee,
+        education: dto.education,
+        description: dto.description,
+        profilePhotoUrl: dto.profilePhotoUrl,
+        availability: dto.availability,
+        status: LawyerStatus.PENDING,
+      });
+
+      if (!existingUser.isEmailVerified) {
+        const otp = this.otpMailService.generateOtp();
+        const otpHash = await this.hashData(otp);
+        existingUser.otpCode = otpHash;
+        existingUser.otpExpiresAt = new Date(Date.now() + OTP_EXPIRY_MINUTES * 60 * 1000);
+        await existingUser.save();
+        await this.otpMailService.sendOtp(email, otp);
+        return {
+          message: 'Account upgraded to lawyer. Please verify your email.',
+          email: existingUser.email,
+          requiresVerification: true,
+        };
+      }
+
+      const tokens = await this.generateTokens(existingUser);
+      await this.setRefreshToken(existingUser.id, tokens.refreshToken);
+      const lawyerProfile = await this.lawyerModel.findOne({ user: existingUser._id }).lean();
+      return {
+        user: this.sanitizeUser(existingUser),
+        tokens,
+        lawyerProfile,
+      };
+    }
+
+    const password = await this.hashData(dto.password);
     const otp = this.otpMailService.generateOtp();
     const otpHash = await this.hashData(otp);
 

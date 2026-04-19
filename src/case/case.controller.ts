@@ -5,6 +5,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { CaseService } from './case.service';
@@ -16,6 +17,8 @@ import { UserRole } from '../common/enums/role.enum';
 import { CreateCaseDto } from './dto/create-case.dto';
 import { UpdateCaseStatusDto } from './dto/update-case-status.dto';
 import { AssignLawyerDto } from './dto/assign-lawyer.dto';
+import { CreateCaseRequestDto } from './dto/create-case-request.dto';
+import { SearchCaseFeedDto } from './dto/search-case-feed.dto';
 
 @Controller('cases')
 export class CaseController {
@@ -43,6 +46,43 @@ export class CaseController {
   @Get('lawyer/me')
   lawyerCases(@CurrentUser() user: { userId: string }) {
     return this.caseService.getLawyerCases(user.userId);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.LAWYER)
+  @Get('lawyer/feed')
+  lawyerCaseFeed(
+    @CurrentUser() user: { userId: string },
+    @Query() query: SearchCaseFeedDto,
+  ) {
+    return this.caseService.searchLawyerCaseFeed(user.userId, query);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.LAWYER)
+  @Post(':id/requests')
+  requestCase(
+    @Param('id') id: string,
+    @CurrentUser() user: { userId: string },
+    @Body() dto: CreateCaseRequestDto,
+  ) {
+    return this.caseService.createLawyerRequest(id, user.userId, dto);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.CLIENT, UserRole.ADMIN)
+  @Patch(':id/requests/:lawyerId/accept')
+  acceptRequest(
+    @Param('id') id: string,
+    @Param('lawyerId') lawyerId: string,
+    @CurrentUser() user: { userId: string; role: UserRole },
+  ) {
+    return this.caseService.acceptLawyerRequest(
+      id,
+      lawyerId,
+      user.userId,
+      user.role,
+    );
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)

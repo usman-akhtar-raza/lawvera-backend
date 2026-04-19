@@ -2,6 +2,7 @@ import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument, SchemaTypes, Types } from 'mongoose';
 import { CaseStatus } from '../../common/enums/case-status.enum';
 import { CaseCategory } from '../../common/enums/case-category.enum';
+import { CaseRequestStatus } from '../../common/enums/case-request-status.enum';
 
 export type CaseDocument = HydratedDocument<Case>;
 
@@ -32,6 +33,30 @@ export class Case {
 
   @Prop({ type: SchemaTypes.ObjectId, ref: 'LawyerProfile' })
   lawyer?: Types.ObjectId;
+
+  @Prop({
+    type: [
+      {
+        lawyer: { type: SchemaTypes.ObjectId, ref: 'LawyerProfile', required: true },
+        message: { type: String },
+        status: {
+          type: String,
+          enum: Object.values(CaseRequestStatus),
+          default: CaseRequestStatus.PENDING,
+        },
+        createdAt: { type: Date, default: Date.now },
+        respondedAt: { type: Date },
+      },
+    ],
+    default: [],
+  })
+  lawyerRequests: Array<{
+    lawyer: Types.ObjectId;
+    message?: string;
+    status: CaseRequestStatus;
+    createdAt: Date;
+    respondedAt?: Date;
+  }>;
 
   @Prop()
   resolutionSummary?: string;
@@ -65,5 +90,6 @@ export const CaseSchema = SchemaFactory.createForClass(Case);
 
 CaseSchema.index({ client: 1, createdAt: -1 });
 CaseSchema.index({ lawyer: 1, status: 1 });
+CaseSchema.index({ 'lawyerRequests.lawyer': 1, status: 1 });
 CaseSchema.index({ status: 1, createdAt: -1 });
 CaseSchema.index({ category: 1 });

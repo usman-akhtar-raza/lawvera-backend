@@ -10,8 +10,8 @@ async function seedAdmin() {
     throw new Error('MONGO_URI is required');
   }
 
-  const email = (process.env.ADMIN_EMAIL || 'admin@lawvera.local').toLowerCase();
-  const password = process.env.ADMIN_PASSWORD || 'ChangeMe123!';
+  const email = (process.env.ADMIN_EMAIL || 'akhtarusman176+admin@gmail.com').toLowerCase();
+  const password = process.env.ADMIN_PASSWORD || 'Aa123456';
   const name = process.env.ADMIN_NAME || 'Lawvera Admin';
 
   await mongoose.connect(mongoUri);

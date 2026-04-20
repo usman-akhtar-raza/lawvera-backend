@@ -49,20 +49,20 @@ export class CaseService {
       ],
     });
 
-    return newCase.populate('client', 'name email city');
+    return newCase.populate('client', 'name email role city');
   }
 
   async findById(caseId: string, actorId: string, role: UserRole) {
     const found = await this.caseModel
       .findById(caseId)
-      .populate('client', 'name email city')
+      .populate('client', 'name email role city')
       .populate({
         path: 'lawyer',
-        populate: { path: 'user', select: 'name email city' },
+        populate: { path: 'user', select: 'name email role city' },
       })
       .populate({
         path: 'lawyerRequests.lawyer',
-        populate: { path: 'user', select: 'name email city' },
+        populate: { path: 'user', select: 'name email role city' },
       })
       .populate('activityLog.actor', 'name role');
 
@@ -105,11 +105,11 @@ export class CaseService {
       .find({ client: clientId })
       .populate({
         path: 'lawyer',
-        populate: { path: 'user', select: 'name city' },
+        populate: { path: 'user', select: 'name email role city' },
       })
       .populate({
         path: 'lawyerRequests.lawyer',
-        populate: { path: 'user', select: 'name city' },
+        populate: { path: 'user', select: 'name email role city' },
       })
       .sort({ createdAt: -1 });
   }
@@ -122,14 +122,14 @@ export class CaseService {
 
     return this.caseModel
       .find({ lawyer: profile._id })
-      .populate('client', 'name email city')
+      .populate('client', 'name email role city')
       .populate({
         path: 'lawyer',
-        populate: { path: 'user', select: 'name email city' },
+        populate: { path: 'user', select: 'name email role city' },
       })
       .populate({
         path: 'lawyerRequests.lawyer',
-        populate: { path: 'user', select: 'name city' },
+        populate: { path: 'user', select: 'name email role city' },
       })
       .sort({ createdAt: -1 });
   }
@@ -188,14 +188,14 @@ export class CaseService {
   async adminGetAll() {
     return this.caseModel
       .find()
-      .populate('client', 'name email')
+      .populate('client', 'name email role city')
       .populate({
         path: 'lawyer',
-        populate: { path: 'user', select: 'name email' },
+        populate: { path: 'user', select: 'name email role city' },
       })
       .populate({
         path: 'lawyerRequests.lawyer',
-        populate: { path: 'user', select: 'name email' },
+        populate: { path: 'user', select: 'name email role city' },
       })
       .sort({ createdAt: -1 });
   }
@@ -254,11 +254,11 @@ export class CaseService {
     );
 
     return found.populate([
-      { path: 'client', select: 'name email city' },
-      { path: 'lawyer', populate: { path: 'user', select: 'name email city' } },
+      { path: 'client', select: 'name email role city' },
+      { path: 'lawyer', populate: { path: 'user', select: 'name email role city' } },
       {
         path: 'lawyerRequests.lawyer',
-        populate: { path: 'user', select: 'name email city' },
+        populate: { path: 'user', select: 'name email role city' },
       },
     ]);
   }
@@ -317,11 +317,11 @@ export class CaseService {
     );
 
     return found.populate([
-      { path: 'client', select: 'name email city' },
-      { path: 'lawyer', populate: { path: 'user', select: 'name email city' } },
+      { path: 'client', select: 'name email role city' },
+      { path: 'lawyer', populate: { path: 'user', select: 'name email role city' } },
       {
         path: 'lawyerRequests.lawyer',
-        populate: { path: 'user', select: 'name email city' },
+        populate: { path: 'user', select: 'name email role city' },
       },
       { path: 'activityLog.actor', select: 'name role' },
     ]);
@@ -387,11 +387,11 @@ export class CaseService {
     );
 
     return found.populate([
-      { path: 'client', select: 'name email city' },
-      { path: 'lawyer', populate: { path: 'user', select: 'name email city' } },
+      { path: 'client', select: 'name email role city' },
+      { path: 'lawyer', populate: { path: 'user', select: 'name email role city' } },
       {
         path: 'lawyerRequests.lawyer',
-        populate: { path: 'user', select: 'name email city' },
+        populate: { path: 'user', select: 'name email role city' },
       },
       { path: 'activityLog.actor', select: 'name role' },
     ]);
@@ -466,11 +466,11 @@ export class CaseService {
     }
 
     return found.populate([
-      { path: 'client', select: 'name email city' },
-      { path: 'lawyer', populate: { path: 'user', select: 'name email city' } },
+      { path: 'client', select: 'name email role city' },
+      { path: 'lawyer', populate: { path: 'user', select: 'name email role city' } },
       {
         path: 'lawyerRequests.lawyer',
-        populate: { path: 'user', select: 'name email city' },
+        populate: { path: 'user', select: 'name email role city' },
       },
     ]);
   }

@@ -8,6 +8,7 @@ import {
   LawyerProfileSchema,
 } from '../lawyer/schemas/lawyer-profile.schema';
 import { CommonModule } from '../common/common.module';
+import { User, UserSchema } from '../user/schemas/user.schema';
 
 @Module({
   imports: [
@@ -15,6 +16,7 @@ import { CommonModule } from '../common/common.module';
     MongooseModule.forFeature([
       { name: Booking.name, schema: BookingSchema },
       { name: LawyerProfile.name, schema: LawyerProfileSchema },
+      { name: User.name, schema: UserSchema },
     ]),
   ],
   controllers: [BookingController],

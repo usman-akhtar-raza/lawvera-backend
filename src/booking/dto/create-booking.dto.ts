@@ -1,5 +1,4 @@
-import { IsDateString, IsEnum, IsOptional, IsString } from 'class-validator';
-import { BookingStatus } from '../../common/enums/booking-status.enum';
+import { IsDateString, IsOptional, IsString } from 'class-validator';
 
 export class CreateBookingDto {
   @IsString()
@@ -12,10 +11,6 @@ export class CreateBookingDto {
   slotTime: string;
 
   @IsOptional()
-  @IsEnum(BookingStatus)
-  status?: BookingStatus = BookingStatus.PENDING;
-
-  @IsOptional()
   @IsString()
   reason?: string;
 
@@ -23,4 +18,3 @@ export class CreateBookingDto {
   @IsString()
   notes?: string;
 }
-

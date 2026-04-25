@@ -24,6 +24,8 @@ import { JwtPayload } from '../common/interfaces/jwt-payload.interface';
 import { OtpMailService } from './otp-mail.service';
 import { SendOtpDto } from './dto/send-otp.dto';
 import { VerifyOtpDto } from './dto/verify-otp.dto';
+import { RequestPasswordResetDto } from './dto/request-password-reset.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
 
 const OTP_EXPIRY_MINUTES = 10;
 
@@ -256,6 +258,57 @@ export class AuthService {
     };
   }
 
+  async requestPasswordReset(dto: RequestPasswordResetDto) {
+    const user = await this.userModel.findOne({ email: dto.email.toLowerCase() });
+    const response = {
+      message:
+        'If an account exists for this email, a password reset code has been sent.',
+    };
+
+    if (!user) {
+      return response;
+    }
+
+    const otp = this.otpMailService.generateOtp();
+    user.passwordResetCode = await this.hashData(otp);
+    user.passwordResetExpiresAt = new Date(
+      Date.now() + OTP_EXPIRY_MINUTES * 60 * 1000,
+    );
+    await user.save();
+
+    await this.otpMailService.sendPasswordResetOtp(user.email, otp);
+
+    return response;
+  }
+
+  async resetPassword(dto: ResetPasswordDto) {
+    const user = await this.userModel.findOne({ email: dto.email.toLowerCase() });
+    if (!user) {
+      throw new BadRequestException('Invalid or expired password reset code.');
+    }
+
+    if (!user.passwordResetCode || !user.passwordResetExpiresAt) {
+      throw new BadRequestException('Invalid or expired password reset code.');
+    }
+
+    if (new Date() > user.passwordResetExpiresAt) {
+      throw new BadRequestException('Invalid or expired password reset code.');
+    }
+
+    const otpMatches = await bcrypt.compare(dto.otp, user.passwordResetCode);
+    if (!otpMatches) {
+      throw new BadRequestException('Invalid or expired password reset code.');
+    }
+
+    user.password = await this.hashData(dto.password);
+    user.passwordResetCode = undefined;
+    user.passwordResetExpiresAt = undefined;
+    user.refreshTokenHash = undefined;
+    await user.save();
+
+    return { message: 'Password reset successful. Please sign in again.' };
+  }
+
   async refreshTokens(dto: RefreshTokenDto) {
     let payload: JwtPayload;
     try {
@@ -300,7 +353,9 @@ export class AuthService {
   async getProfile(userId: string) {
     const user = await this.userModel
       .findById(userId)
-      .select('-password -refreshTokenHash')
+      .select(
+        '-password -refreshTokenHash -otpCode -otpExpiresAt -passwordResetCode -passwordResetExpiresAt',
+      )
       .lean();
     if (!user) {
       throw new UnauthorizedException('User not found');
@@ -350,7 +405,15 @@ export class AuthService {
 
   private sanitizeUser(user: UserDocument) {
     const obj = user.toObject();
-    const { password, refreshTokenHash, ...sanitized } = obj;
+    const {
+      password,
+      refreshTokenHash,
+      otpCode,
+      otpExpiresAt,
+      passwordResetCode,
+      passwordResetExpiresAt,
+      ...sanitized
+    } = obj;
     return sanitized;
   }
 }

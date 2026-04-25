@@ -74,4 +74,34 @@ export class OtpMailService {
       this.logger.warn(`[DEV] OTP for ${email}: ${otp}`);
     }
   }
+
+  async sendPasswordResetOtp(email: string, otp: string): Promise<void> {
+    const subject = 'Lawvera - Password Reset Code';
+    const html = `
+      <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; padding: 32px; background: #fbf7f0; border-radius: 12px;">
+        <h2 style="color: #1B3A5C; margin-bottom: 8px;">Lawvera</h2>
+        <p style="color: #333; font-size: 15px;">Use this code to reset your password:</p>
+        <div style="text-align: center; margin: 24px 0;">
+          <span style="font-size: 32px; font-weight: bold; letter-spacing: 8px; color: #1B3A5C; background: #f3e2c1; padding: 12px 24px; border-radius: 8px;">${otp}</span>
+        </div>
+        <p style="color: #666; font-size: 13px;">This code expires in 10 minutes. If you did not request this, please ignore this email.</p>
+      </div>
+    `;
+
+    if (this.transporter) {
+      const from = this.configService.get<string>(
+        'SMTP_FROM',
+        `Lawvera <${this.configService.get<string>('SMTP_USER')}>`,
+      );
+      const info = await this.transporter.sendMail({
+        from,
+        to: email,
+        subject,
+        html,
+      });
+      this.logger.log(`Password reset email sent to ${email} (messageId: ${info.messageId})`);
+    } else {
+      this.logger.warn(`[DEV] Password reset OTP for ${email}: ${otp}`);
+    }
+  }
 }

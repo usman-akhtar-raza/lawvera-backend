@@ -38,6 +38,12 @@ export class User {
 
   @Prop()
   otpExpiresAt?: Date;
+
+  @Prop()
+  passwordResetCode?: string;
+
+  @Prop()
+  passwordResetExpiresAt?: Date;
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);

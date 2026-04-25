@@ -35,6 +35,7 @@ async function seedAdmin() {
     console.log(`Created admin user: ${email}`);
   }
 
+
   await mongoose.disconnect();
 }
 

@@ -40,6 +40,7 @@
     "class-validator": "^0.14.2",
     "date-fns": "^4.1.0",
     "ioredis": "^5.10.0",
+    "jazzcash-checkout": "^1.0.0",
     "mongoose": "^8.20.1",
     "nodemailer": "^8.0.4",
     "openai": "^6.9.1",

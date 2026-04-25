@@ -9,6 +9,7 @@ import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'crypto';
+import Jazzcash from 'jazzcash-checkout';
 import { Booking, BookingDocument } from './schemas/booking.schema';
 import {
   LawyerProfile,
@@ -199,13 +200,8 @@ export class BookingService {
       return this.buildBrowserRedirectHtml(baseReturnUrl);
     }
 
-    const client = await this.userModel
-      .findById(booking.client)
-      .select('name email phone')
-      .lean();
-
     const jazzCash = this.getJazzCashConfig();
-    const payload = this.buildJazzCashRequestPayload(booking, client, jazzCash);
+    const payload = await this.buildJazzCashRequestPayload(booking, jazzCash);
 
     await this.bookingModel.updateOne(
       { _id: booking._id },
@@ -625,22 +621,25 @@ export class BookingService {
     return description.slice(0, 100);
   }
 
-  private buildJazzCashRequestPayload(
+  private async buildJazzCashRequestPayload(
     booking: BookingDocument | (Booking & { _id: Types.ObjectId }),
-    client:
-      | Pick<User, 'name' | 'email' | 'phone'>
-      | null,
     config: JazzCashConfig,
   ) {
-    const payload: Record<string, string> = {
-      pp_Version: '2.0',
+    Jazzcash.credentials({
+      config: {
+        merchantId: config.merchantId,
+        password: config.password,
+        hashKey: config.integritySalt,
+      },
+      environment: 'sandbox',
+    });
+
+    Jazzcash.setData({
+      pp_Version: '1.1',
       pp_TxnType: config.txnType,
       pp_Language: config.language,
-      pp_MerchantID: config.merchantId,
-      pp_SubMerchantID: '',
-      pp_Password: config.password,
       pp_TxnRefNo: booking.payment.txnRefNo,
-      pp_Amount: String(booking.payment.amountMinor),
+      pp_Amount: booking.payment.amountMinor / 100,
       pp_TxnCurrency: booking.payment.currency,
       pp_TxnDateTime: booking.payment.txnDateTime,
       pp_BillReference: booking.payment.billReference || '',
@@ -649,39 +648,19 @@ export class BookingService {
       pp_ReturnURL: `${this.trimTrailingSlash(
         config.backendPublicUrl,
       )}/api/bookings/payments/jazzcash/callback`,
-      pp_IsRegisteredCustomer: 'Yes',
       ppmpf_1: String(booking._id),
-    };
+    });
 
-    if (client?.email) {
-      payload.pp_CustomerEmail = client.email;
-      payload.pp_CustomerID = String((booking as BookingDocument)._id || booking._id);
-    }
+    const payload = await Jazzcash.createRequest('PAY');
 
-    const customerMobile = this.normalizeCustomerMobile(client?.phone);
-    if (customerMobile) {
-      payload.pp_CustomerMobile = customerMobile;
-    }
-
-    payload.pp_SecureHash = this.computeJazzCashSecureHash(
-      payload,
-      config.integritySalt,
+    return Object.entries(payload).reduce<Record<string, string>>(
+      (accumulator, [key, value]) => {
+        accumulator[key] =
+          key === 'pp_SecureHash' ? String(value).toUpperCase() : String(value);
+        return accumulator;
+      },
+      {},
     );
-
-    return payload;
-  }
-
-  private normalizeCustomerMobile(phone?: string) {
-    if (!phone) {
-      return undefined;
-    }
-
-    const digits = phone.replace(/\D/g, '');
-    if (digits.length < 10 || digits.length > 15) {
-      return undefined;
-    }
-
-    return digits;
   }
 
   private normalizeJazzCashPayload(rawPayload: Record<string, unknown>) {

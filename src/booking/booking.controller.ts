@@ -48,6 +48,13 @@ export class BookingController {
     return this.bookingService.getLawyerBookings(user.userId);
   }
 
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.CLIENT, UserRole.LAWYER)
+  @Get('finances/me')
+  myFinances(@CurrentUser() user: { userId: string; role: UserRole }) {
+    return this.bookingService.getMyFinances(user);
+  }
+
   @Get('payments/jazzcash/redirect')
   async jazzCashRedirect(
     @Query('bookingId') bookingId: string,

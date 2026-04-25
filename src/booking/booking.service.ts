@@ -38,6 +38,20 @@ type JazzCashConfig = {
   paymentWindowMinutes: number;
 };
 
+type PopulatedUserSummary = {
+  _id?: Types.ObjectId | string;
+  name?: string;
+  email?: string;
+  phone?: string;
+  city?: string;
+};
+
+type PopulatedLawyerSummary = {
+  _id?: Types.ObjectId | string;
+  specialization?: string;
+  user?: PopulatedUserSummary;
+};
+
 @Injectable()
 export class BookingService {
   private static readonly DEFAULT_PAYMENT_WINDOW_MINUTES = 15;
@@ -372,6 +386,90 @@ export class BookingService {
       .sort({ slotDate: -1 });
   }
 
+  async getMyFinances(actor: CurrentActor) {
+    await this.expireStalePaymentReservations();
+
+    if (actor.role === UserRole.CLIENT) {
+      const bookings = await this.bookingModel
+        .find({
+          client: actor.userId,
+          'payment.status': PaymentStatus.SUCCEEDED,
+        })
+        .populate({
+          path: 'lawyer',
+          select: 'specialization user',
+          populate: { path: 'user', select: 'name email city phone' },
+        })
+        .sort({ 'payment.paidAt': -1, createdAt: -1 })
+        .lean();
+
+      return this.buildFinanceResponse(
+        'client',
+        bookings.map((booking) => {
+          const lawyer = booking.lawyer as PopulatedLawyerSummary | undefined;
+          return {
+            id: String(booking._id),
+            bookingId: String(booking._id),
+            direction: 'paid' as const,
+            counterparty: this.buildCounterpartySummary(lawyer?.user),
+            lawyerSpecialization: lawyer?.specialization || null,
+            amountMinor: booking.payment.amountMinor,
+            currency: booking.payment.currency,
+            provider: booking.payment.provider,
+            paymentStatus: booking.payment.status,
+            bookingStatus: booking.status,
+            txnRefNo: booking.payment.txnRefNo,
+            paidAt: booking.payment.paidAt?.toISOString() || null,
+            appointmentDate: booking.slotDate.toISOString(),
+            slotTime: booking.slotTime,
+            reason: booking.reason || null,
+          };
+        }),
+      );
+    }
+
+    if (actor.role === UserRole.LAWYER) {
+      const profile = await this.lawyerModel.findOne({ user: actor.userId });
+      if (!profile) {
+        throw new NotFoundException('Lawyer profile not found');
+      }
+
+      const bookings = await this.bookingModel
+        .find({
+          lawyer: profile._id,
+          'payment.status': PaymentStatus.SUCCEEDED,
+        })
+        .populate('client', 'name email city phone')
+        .sort({ 'payment.paidAt': -1, createdAt: -1 })
+        .lean();
+
+      return this.buildFinanceResponse(
+        'lawyer',
+        bookings.map((booking) => ({
+          id: String(booking._id),
+          bookingId: String(booking._id),
+          direction: 'received' as const,
+          counterparty: this.buildCounterpartySummary(
+            booking.client as PopulatedUserSummary,
+          ),
+          lawyerSpecialization: profile.specialization || null,
+          amountMinor: booking.payment.amountMinor,
+          currency: booking.payment.currency,
+          provider: booking.payment.provider,
+          paymentStatus: booking.payment.status,
+          bookingStatus: booking.status,
+          txnRefNo: booking.payment.txnRefNo,
+          paidAt: booking.payment.paidAt?.toISOString() || null,
+          appointmentDate: booking.slotDate.toISOString(),
+          slotTime: booking.slotTime,
+          reason: booking.reason || null,
+        })),
+      );
+    }
+
+    throw new UnauthorizedException();
+  }
+
   async updateStatus(
     bookingId: string,
     dto: UpdateBookingStatusDto,
@@ -547,6 +645,40 @@ export class BookingService {
     }
 
     throw new UnauthorizedException();
+  }
+
+  private buildFinanceResponse(
+    role: 'client' | 'lawyer',
+    transactions: Array<{
+      amountMinor: number;
+      currency: string;
+      [key: string]: unknown;
+    }>,
+  ) {
+    const totalAmountMinor = transactions.reduce(
+      (sum, transaction) => sum + transaction.amountMinor,
+      0,
+    );
+
+    return {
+      role,
+      summary: {
+        totalTransactions: transactions.length,
+        totalAmountMinor,
+        currency: transactions[0]?.currency || 'PKR',
+      },
+      transactions,
+    };
+  }
+
+  private buildCounterpartySummary(user?: PopulatedUserSummary) {
+    return {
+      id: user?._id ? String(user._id) : null,
+      name: user?.name || 'Unknown user',
+      email: user?.email || null,
+      phone: user?.phone || null,
+      city: user?.city || null,
+    };
   }
 
   private async ensureSlotAvailable(

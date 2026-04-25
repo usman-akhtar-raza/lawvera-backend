@@ -65,7 +65,7 @@ describe('ChatService RAG retrieval', () => {
     expect(createMock).toHaveBeenCalledTimes(2);
   });
 
-  it('returns not-found response when retrieval confidence is weak', async () => {
+  it('returns contextual legal response when retrieval confidence is weak', async () => {
     retrieveChunksMock.mockResolvedValue([
       {
         chunkId: 'chunk-2',
@@ -87,8 +87,29 @@ describe('ChatService RAG retrieval', () => {
       message: 'How do I patent software in Europe?',
     });
 
-    expect(result.answer).toBe("I couldn't find this in the provided law books.");
+    expect(result.answer).toContain(
+      'I do not have a strong match in the uploaded law books',
+    );
     expect(result.citations).toEqual([]);
+    expect(createMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('returns predefined answers before retrieval', async () => {
+    const service = new ChatService(
+      chatModelMock as any,
+      configServiceMock as any,
+      lawSourcesServiceMock as any,
+    );
+
+    const result = await service.ask('user-1', UserRole.CLIENT, {
+      message: 'What is FIR?',
+    });
+
+    expect(result.answer).toContain('First Information Report');
+    expect(result.citations).toEqual([]);
+    expect(result.retrievedPreview).toEqual([]);
+    expect(retrieveChunksMock).not.toHaveBeenCalled();
+    expect(findMock).not.toHaveBeenCalled();
     expect(createMock).toHaveBeenCalledTimes(2);
   });
 });

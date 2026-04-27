@@ -42,6 +42,8 @@ export interface ProfileSwitchStatus {
   canSwitchToClientProfile: boolean;
   switchToLawyerProfileReason: string | null;
   switchToClientProfileReason: string | null;
+  hasStoredLawyerProfile: boolean;
+  storedLawyerProfileStatus: LawyerStatus | null;
 }
 
 @Injectable()
@@ -84,7 +86,7 @@ export class LawyerService {
     user.role = UserRole.LAWYER;
     await user.save();
 
-    const lawyerProfile = await this.lawyerModel.create({
+    await this.lawyerModel.create({
       user: user._id,
       specialization: dto.specialization,
       experienceYears: dto.experienceYears,
@@ -97,7 +99,43 @@ export class LawyerService {
       status: LawyerStatus.PENDING,
     });
 
-    return { user, lawyerProfile };
+    return {
+      user,
+      lawyerProfile: await this.findByUserId(userId),
+    };
+  }
+
+  async reactivateLawyerProfile(userId: string) {
+    const user = await this.userModel.findById(userId);
+    if (!user) {
+      throw new BadRequestException('User not found');
+    }
+    if (user.role !== UserRole.CLIENT) {
+      throw new BadRequestException('Only clients can switch back to a lawyer profile');
+    }
+
+    const switchStatus = await this.buildClientSwitchStatus(userId);
+    if (!switchStatus.canSwitchToLawyerProfile) {
+      throw new BadRequestException(
+        switchStatus.switchToLawyerProfileReason ||
+          'You cannot switch to a lawyer profile right now.',
+      );
+    }
+
+    const existingProfile = await this.lawyerModel.findOne({ user: userId });
+    if (!existingProfile) {
+      throw new BadRequestException(
+        'No saved lawyer profile was found for this account.',
+      );
+    }
+
+    user.role = UserRole.LAWYER;
+    await user.save();
+
+    return {
+      user,
+      lawyerProfile: await this.findByUserId(userId),
+    };
   }
 
   async revertToClient(userId: string) {
@@ -142,6 +180,8 @@ export class LawyerService {
       canSwitchToClientProfile: false,
       switchToLawyerProfileReason: null,
       switchToClientProfileReason: null,
+      hasStoredLawyerProfile: false,
+      storedLawyerProfileStatus: null,
     };
   }
 
@@ -265,7 +305,7 @@ export class LawyerService {
     if (!profile) {
       throw new NotFoundException('Lawyer profile not found');
     }
-    return profile;
+    return this.findByUserId(userId);
   }
 
   async addReview(lawyerId: string, clientId: string, dto: CreateReviewDto) {
@@ -318,10 +358,13 @@ export class LawyerService {
   private async buildClientSwitchStatus(
     userId: string,
   ): Promise<ProfileSwitchStatus> {
-    const inProgressCaseCount = await this.caseModel.countDocuments({
-      client: userId,
-      status: CaseStatus.IN_PROGRESS,
-    });
+    const [inProgressCaseCount, existingProfile] = await Promise.all([
+      this.caseModel.countDocuments({
+        client: userId,
+        status: CaseStatus.IN_PROGRESS,
+      }),
+      this.lawyerModel.findOne({ user: userId }).select('status'),
+    ]);
 
     return {
       canSwitchToLawyerProfile: inProgressCaseCount === 0,
@@ -331,19 +374,23 @@ export class LawyerService {
           ? 'You cannot switch to a lawyer profile while you have a case in progress as a client.'
           : null,
       switchToClientProfileReason: null,
+      hasStoredLawyerProfile: Boolean(existingProfile),
+      storedLawyerProfileStatus: existingProfile?.status ?? null,
     };
   }
 
   private async buildLawyerSwitchStatus(
     userId: string,
   ): Promise<ProfileSwitchStatus> {
-    const profile = await this.lawyerModel.findOne({ user: userId }).select('_id');
+    const profile = await this.lawyerModel.findOne({ user: userId }).select('_id status');
     if (!profile) {
       return {
         canSwitchToLawyerProfile: false,
         canSwitchToClientProfile: false,
         switchToLawyerProfileReason: null,
         switchToClientProfileReason: 'Lawyer profile not found.',
+        hasStoredLawyerProfile: false,
+        storedLawyerProfileStatus: null,
       };
     }
 
@@ -384,6 +431,8 @@ export class LawyerService {
             activeCaseCount,
             pendingCaseRequestCount,
           ),
+      hasStoredLawyerProfile: true,
+      storedLawyerProfileStatus: profile.status ?? null,
     };
   }
 

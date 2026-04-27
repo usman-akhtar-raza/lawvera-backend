@@ -37,6 +37,12 @@ export class LawyerController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @Post('reactivate-profile')
+  reactivateLawyerProfile(@CurrentUser() user: { userId: string }) {
+    return this.lawyerService.reactivateLawyerProfile(user.userId);
+  }
+
+  @UseGuards(JwtAuthGuard)
   @Post('revert-to-client')
   revertToClient(@CurrentUser() user: { userId: string }) {
     return this.lawyerService.revertToClient(user.userId);

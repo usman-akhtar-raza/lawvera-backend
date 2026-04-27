@@ -55,6 +55,13 @@ export class BookingController {
     return this.bookingService.getMyFinances(user);
   }
 
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @Get('finances/admin')
+  adminFinances() {
+    return this.bookingService.getAdminFinances();
+  }
+
   @Get('payments/jazzcash/redirect')
   async jazzCashRedirect(
     @Query('bookingId') bookingId: string,

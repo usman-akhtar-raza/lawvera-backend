@@ -12,6 +12,10 @@ import { createHash, createHmac, randomBytes, timingSafeEqual } from 'crypto';
 import Jazzcash from 'jazzcash-checkout';
 import { Booking, BookingDocument } from './schemas/booking.schema';
 import {
+  FinanceTransaction,
+  FinanceTransactionDocument,
+} from './schemas/finance-transaction.schema';
+import {
   LawyerProfile,
   LawyerProfileDocument,
 } from '../lawyer/schemas/lawyer-profile.schema';
@@ -52,6 +56,20 @@ type PopulatedLawyerSummary = {
   user?: PopulatedUserSummary;
 };
 
+type FinanceBookingRecord = Booking & {
+  _id: Types.ObjectId;
+  client: Types.ObjectId | PopulatedUserSummary;
+  lawyer: Types.ObjectId | PopulatedLawyerSummary;
+  createdAt?: Date;
+  updatedAt?: Date;
+};
+
+type StoredFinanceTransaction = FinanceTransaction & {
+  _id: Types.ObjectId | string;
+  createdAt?: Date;
+  updatedAt?: Date;
+};
+
 @Injectable()
 export class BookingService {
   private static readonly DEFAULT_PAYMENT_WINDOW_MINUTES = 15;
@@ -59,6 +77,8 @@ export class BookingService {
   constructor(
     @InjectModel(Booking.name)
     private readonly bookingModel: Model<BookingDocument>,
+    @InjectModel(FinanceTransaction.name)
+    private readonly financeTransactionModel: Model<FinanceTransactionDocument>,
     @InjectModel(LawyerProfile.name)
     private readonly lawyerModel: Model<LawyerProfileDocument>,
     @InjectModel(User.name)
@@ -154,6 +174,7 @@ export class BookingService {
     booking.payment.redirectTokenExpiresAt = expiresAt;
 
     await booking.save();
+    await this.syncFinanceTransactionForBookingId(booking._id);
 
     return {
       bookingId: String(booking._id),
@@ -253,6 +274,7 @@ export class BookingService {
 
     const redirectBase = this.buildFrontendReturnUrl(String(booking._id));
     if (booking.payment?.status === PaymentStatus.SUCCEEDED) {
+      await this.syncFinanceTransactionForBookingId(booking._id);
       return { redirectUrl: `${redirectBase}&status=success` };
     }
 
@@ -295,6 +317,7 @@ export class BookingService {
         'JazzCash callback did not match the initiated booking values.';
       booking.status = BookingStatus.CANCELLED;
       await booking.save();
+      await this.syncFinanceTransactionForBookingId(booking._id, payload);
 
       return { redirectUrl: `${redirectBase}&status=validation_failed` };
     }
@@ -304,6 +327,7 @@ export class BookingService {
       booking.payment.paidAt = new Date();
       booking.status = BookingStatus.PENDING;
       await booking.save();
+      await this.syncFinanceTransactionForBookingId(booking._id, payload);
 
       const lawyerProfile = await this.lawyerModel
         .findById(booking.lawyer)
@@ -324,6 +348,7 @@ export class BookingService {
       booking.payment.status = PaymentStatus.PENDING;
       booking.status = BookingStatus.AWAITING_PAYMENT;
       await booking.save();
+      await this.syncFinanceTransactionForBookingId(booking._id, payload);
 
       return { redirectUrl: `${redirectBase}&status=pending` };
     }
@@ -334,6 +359,7 @@ export class BookingService {
     booking.payment.failedAt = new Date();
     booking.status = BookingStatus.CANCELLED;
     await booking.save();
+    await this.syncFinanceTransactionForBookingId(booking._id, payload);
 
     return { redirectUrl: `${redirectBase}&status=failed` };
   }
@@ -390,41 +416,23 @@ export class BookingService {
     await this.expireStalePaymentReservations();
 
     if (actor.role === UserRole.CLIENT) {
-      const bookings = await this.bookingModel
+      await this.backfillFinanceTransactions({
+        client: new Types.ObjectId(actor.userId),
+      });
+
+      const transactions = await this.financeTransactionModel
         .find({
           client: actor.userId,
-          'payment.status': PaymentStatus.SUCCEEDED,
+          paymentStatus: PaymentStatus.SUCCEEDED,
         })
-        .populate({
-          path: 'lawyer',
-          select: 'specialization user',
-          populate: { path: 'user', select: 'name email city phone' },
-        })
-        .sort({ 'payment.paidAt': -1, createdAt: -1 })
+        .sort({ paidAt: -1, createdAt: -1 })
         .lean();
 
       return this.buildFinanceResponse(
         'client',
-        bookings.map((booking) => {
-          const lawyer = booking.lawyer as PopulatedLawyerSummary | undefined;
-          return {
-            id: String(booking._id),
-            bookingId: String(booking._id),
-            direction: 'paid' as const,
-            counterparty: this.buildCounterpartySummary(lawyer?.user),
-            lawyerSpecialization: lawyer?.specialization || null,
-            amountMinor: booking.payment.amountMinor,
-            currency: booking.payment.currency,
-            provider: booking.payment.provider,
-            paymentStatus: booking.payment.status,
-            bookingStatus: booking.status,
-            txnRefNo: booking.payment.txnRefNo,
-            paidAt: booking.payment.paidAt?.toISOString() || null,
-            appointmentDate: booking.slotDate.toISOString(),
-            slotTime: booking.slotTime,
-            reason: booking.reason || null,
-          };
-        }),
+        transactions.map((transaction) =>
+          this.mapFinanceTransactionForViewer(transaction, 'client'),
+        ),
       );
     }
 
@@ -434,40 +442,41 @@ export class BookingService {
         throw new NotFoundException('Lawyer profile not found');
       }
 
-      const bookings = await this.bookingModel
+      await this.backfillFinanceTransactions({ lawyer: profile._id });
+
+      const transactions = await this.financeTransactionModel
         .find({
-          lawyer: profile._id,
-          'payment.status': PaymentStatus.SUCCEEDED,
+          lawyerUser: actor.userId,
+          paymentStatus: PaymentStatus.SUCCEEDED,
         })
-        .populate('client', 'name email city phone')
-        .sort({ 'payment.paidAt': -1, createdAt: -1 })
+        .sort({ paidAt: -1, createdAt: -1 })
         .lean();
 
       return this.buildFinanceResponse(
         'lawyer',
-        bookings.map((booking) => ({
-          id: String(booking._id),
-          bookingId: String(booking._id),
-          direction: 'received' as const,
-          counterparty: this.buildCounterpartySummary(
-            booking.client as PopulatedUserSummary,
-          ),
-          lawyerSpecialization: profile.specialization || null,
-          amountMinor: booking.payment.amountMinor,
-          currency: booking.payment.currency,
-          provider: booking.payment.provider,
-          paymentStatus: booking.payment.status,
-          bookingStatus: booking.status,
-          txnRefNo: booking.payment.txnRefNo,
-          paidAt: booking.payment.paidAt?.toISOString() || null,
-          appointmentDate: booking.slotDate.toISOString(),
-          slotTime: booking.slotTime,
-          reason: booking.reason || null,
-        })),
+        transactions.map((transaction) =>
+          this.mapFinanceTransactionForViewer(transaction, 'lawyer'),
+        ),
       );
     }
 
     throw new UnauthorizedException();
+  }
+
+  async getAdminFinances() {
+    await this.expireStalePaymentReservations();
+    await this.backfillFinanceTransactions();
+
+    const transactions = await this.financeTransactionModel
+      .find()
+      .sort({ paidAt: -1, updatedAt: -1, createdAt: -1 })
+      .lean();
+
+    return this.buildAdminFinanceResponse(
+      transactions.map((transaction) =>
+        this.mapFinanceTransactionForAdmin(transaction),
+      ),
+    );
   }
 
   async updateStatus(
@@ -527,6 +536,7 @@ export class BookingService {
     booking.status = dto.status;
     booking.notes = dto.notes ?? booking.notes;
     await booking.save();
+    await this.syncFinanceTransactionForBookingId(booking._id);
 
     await this.notificationService.notifyClient(
       booking.client.toString(),
@@ -567,12 +577,15 @@ export class BookingService {
     const previouslyPaid = booking.payment?.status === PaymentStatus.SUCCEEDED;
 
     booking.status = BookingStatus.CANCELLED;
-    booking.payment.status = PaymentStatus.CANCELLED;
+    if (!previouslyPaid) {
+      booking.payment.status = PaymentStatus.CANCELLED;
+      booking.payment.failedAt = booking.payment.failedAt || new Date();
+    }
     booking.payment.responseMessage = booking.payment.responseMessage || 'Cancelled';
-    booking.payment.failedAt = booking.payment.failedAt || new Date();
     booking.payment.redirectTokenHash = undefined;
     booking.payment.redirectTokenExpiresAt = undefined;
     await booking.save();
+    await this.syncFinanceTransactionForBookingId(booking._id);
 
     if (previouslyPaid) {
       const lawyerProfile = await this.lawyerModel.findById(booking.lawyer);
@@ -652,33 +665,324 @@ export class BookingService {
     transactions: Array<{
       amountMinor: number;
       currency: string;
+      paymentStatus: PaymentStatus;
       [key: string]: unknown;
     }>,
   ) {
-    const totalAmountMinor = transactions.reduce(
-      (sum, transaction) => sum + transaction.amountMinor,
-      0,
-    );
-
     return {
       role,
-      summary: {
-        totalTransactions: transactions.length,
-        totalAmountMinor,
-        currency: transactions[0]?.currency || 'PKR',
-      },
+      summary: this.buildFinanceSummary(transactions),
       transactions,
     };
   }
 
-  private buildCounterpartySummary(user?: PopulatedUserSummary) {
+  private buildAdminFinanceResponse(
+    transactions: Array<{
+      amountMinor: number;
+      currency: string;
+      paymentStatus: PaymentStatus;
+      [key: string]: unknown;
+    }>,
+  ) {
     return {
-      id: user?._id ? String(user._id) : null,
+      role: 'admin' as const,
+      summary: this.buildFinanceSummary(transactions),
+      transactions,
+    };
+  }
+
+  private buildFinanceSummary(
+    transactions: Array<{
+      amountMinor: number;
+      currency: string;
+      paymentStatus: PaymentStatus;
+    }>,
+  ) {
+    const summary = {
+      totalTransactions: transactions.length,
+      totalAmountMinor: 0,
+      currency: transactions[0]?.currency || 'PKR',
+      succeededTransactions: 0,
+      pendingTransactions: 0,
+      failedTransactions: 0,
+      cancelledTransactions: 0,
+      expiredTransactions: 0,
+    };
+
+    for (const transaction of transactions) {
+      if (transaction.paymentStatus === PaymentStatus.SUCCEEDED) {
+        summary.totalAmountMinor += transaction.amountMinor;
+        summary.succeededTransactions += 1;
+        continue;
+      }
+
+      if (transaction.paymentStatus === PaymentStatus.PENDING) {
+        summary.pendingTransactions += 1;
+        continue;
+      }
+
+      if (transaction.paymentStatus === PaymentStatus.FAILED) {
+        summary.failedTransactions += 1;
+        continue;
+      }
+
+      if (transaction.paymentStatus === PaymentStatus.CANCELLED) {
+        summary.cancelledTransactions += 1;
+        continue;
+      }
+
+      if (transaction.paymentStatus === PaymentStatus.EXPIRED) {
+        summary.expiredTransactions += 1;
+      }
+    }
+
+    return summary;
+  }
+
+  private mapFinanceTransactionForViewer(
+    transaction: StoredFinanceTransaction,
+    role: 'client' | 'lawyer',
+  ) {
+    const client = this.buildParticipantSummary(transaction.clientSnapshot);
+    const lawyer = this.buildParticipantSummary(transaction.lawyerSnapshot);
+
+    return {
+      id: String(transaction._id),
+      bookingId: String(transaction.booking),
+      direction: role === 'client' ? ('paid' as const) : ('received' as const),
+      counterparty: role === 'client' ? lawyer : client,
+      lawyerSpecialization: transaction.lawyerSnapshot?.specialization || null,
+      amountMinor: transaction.amountMinor,
+      currency: transaction.currency,
+      provider: transaction.provider,
+      paymentStatus: transaction.paymentStatus,
+      bookingStatus: transaction.bookingStatus,
+      txnRefNo: transaction.txnRefNo,
+      receiptNumber: transaction.receiptNumber,
+      paidAt: this.serializeDate(transaction.paidAt),
+      initiatedAt: this.serializeDate(transaction.initiatedAt),
+      failedAt: this.serializeDate(transaction.failedAt),
+      appointmentDate: this.serializeDate(transaction.appointmentDate),
+      slotTime: transaction.slotTime,
+      reason: transaction.reason || null,
+      responseMessage: transaction.responseMessage || null,
+    };
+  }
+
+  private mapFinanceTransactionForAdmin(transaction: StoredFinanceTransaction) {
+    const lawyer = this.buildParticipantSummary(transaction.lawyerSnapshot);
+
+    return {
+      id: String(transaction._id),
+      bookingId: String(transaction.booking),
+      client: this.buildParticipantSummary(transaction.clientSnapshot),
+      lawyer: {
+        ...lawyer,
+        specialization: transaction.lawyerSnapshot?.specialization || null,
+      },
+      amountMinor: transaction.amountMinor,
+      currency: transaction.currency,
+      provider: transaction.provider,
+      paymentStatus: transaction.paymentStatus,
+      bookingStatus: transaction.bookingStatus,
+      txnRefNo: transaction.txnRefNo,
+      receiptNumber: transaction.receiptNumber,
+      paidAt: this.serializeDate(transaction.paidAt),
+      initiatedAt: this.serializeDate(transaction.initiatedAt),
+      failedAt: this.serializeDate(transaction.failedAt),
+      appointmentDate: this.serializeDate(transaction.appointmentDate),
+      slotTime: transaction.slotTime,
+      reason: transaction.reason || null,
+      responseMessage: transaction.responseMessage || null,
+    };
+  }
+
+  private buildParticipantSummary(user?: {
+    userId?: Types.ObjectId;
+    name?: string;
+    email?: string;
+    phone?: string;
+    city?: string;
+  }) {
+    return {
+      id: user?.userId ? String(user.userId) : null,
       name: user?.name || 'Unknown user',
       email: user?.email || null,
       phone: user?.phone || null,
       city: user?.city || null,
     };
+  }
+
+  private buildParticipantSnapshot(
+    user: PopulatedUserSummary,
+    specialization?: string,
+  ) {
+    return {
+      userId: user?._id ? this.toObjectId(user._id) : undefined,
+      name: user?.name || 'Unknown user',
+      email: user?.email || undefined,
+      phone: user?.phone || undefined,
+      city: user?.city || undefined,
+      specialization: specialization || undefined,
+    };
+  }
+
+  private serializeDate(value?: Date | null) {
+    return value instanceof Date ? value.toISOString() : null;
+  }
+
+  private async backfillFinanceTransactions(filters: Record<string, unknown> = {}) {
+    const bookings = (await this.bookingModel
+      .find({
+        ...filters,
+        'payment.txnRefNo': { $exists: true, $ne: '' },
+      })
+      .populate('client', 'name email city phone')
+      .populate({
+        path: 'lawyer',
+        select: 'specialization user',
+        populate: { path: 'user', select: 'name email city phone' },
+      })
+      .lean()) as FinanceBookingRecord[];
+
+    for (const booking of bookings) {
+      await this.syncFinanceTransactionForBooking(booking);
+    }
+  }
+
+  private async syncFinanceTransactionForBookingId(
+    bookingId: Types.ObjectId | string,
+    lastCallbackPayload?: Record<string, unknown>,
+  ) {
+    const booking = (await this.bookingModel
+      .findById(bookingId)
+      .populate('client', 'name email city phone')
+      .populate({
+        path: 'lawyer',
+        select: 'specialization user',
+        populate: { path: 'user', select: 'name email city phone' },
+      })
+      .lean()) as FinanceBookingRecord | null;
+
+    if (!booking) {
+      return;
+    }
+
+    await this.syncFinanceTransactionForBooking(booking, lastCallbackPayload);
+  }
+
+  private async syncFinanceTransactionForBooking(
+    booking: FinanceBookingRecord,
+    lastCallbackPayload?: Record<string, unknown>,
+  ) {
+    if (!booking.payment?.txnRefNo) {
+      return;
+    }
+
+    const clientSource =
+      this.extractPopulatedUser(booking.client) ||
+      (await this.userModel
+        .findById(booking.client)
+        .select('name email city phone')
+        .lean());
+
+    const lawyerSource =
+      this.extractPopulatedLawyer(booking.lawyer) ||
+      ((await this.lawyerModel
+        .findById(booking.lawyer)
+        .populate('user', 'name email city phone')
+        .select('specialization user')
+        .lean()) as PopulatedLawyerSummary | null);
+
+    const lawyerUser = this.extractPopulatedUser(lawyerSource?.user);
+
+    if (!clientSource?._id || !lawyerSource?._id || !lawyerUser?._id) {
+      return;
+    }
+
+    const update: Record<string, unknown> = {
+      booking: this.toObjectId(booking._id),
+      client: this.toObjectId(clientSource._id),
+      lawyerProfile: this.toObjectId(lawyerSource._id),
+      lawyerUser: this.toObjectId(lawyerUser._id),
+      clientSnapshot: this.buildParticipantSnapshot(clientSource),
+      lawyerSnapshot: this.buildParticipantSnapshot(
+        lawyerUser,
+        lawyerSource.specialization,
+      ),
+      amountMinor: booking.payment.amountMinor,
+      currency: booking.payment.currency,
+      provider: booking.payment.provider,
+      paymentStatus: booking.payment.status,
+      bookingStatus: booking.status,
+      txnRefNo: booking.payment.txnRefNo,
+      receiptNumber: this.buildReceiptNumber(booking.payment.txnRefNo),
+      txnDateTime: booking.payment.txnDateTime,
+      txnExpiryDateTime: booking.payment.txnExpiryDateTime,
+      billReference: booking.payment.billReference,
+      description: booking.payment.description,
+      secureHashVerified: booking.payment.secureHashVerified,
+      responseCode: booking.payment.responseCode,
+      responseMessage: booking.payment.responseMessage,
+      retrievalReferenceNo: booking.payment.retrievalReferenceNo,
+      authCode: booking.payment.authCode,
+      initiatedAt: booking.payment.initiatedAt,
+      paidAt: booking.payment.paidAt,
+      failedAt: booking.payment.failedAt,
+      appointmentDate: booking.slotDate,
+      slotTime: booking.slotTime,
+      reason: booking.reason,
+      notes: booking.notes,
+      lastSyncedAt: new Date(),
+    };
+
+    if (lastCallbackPayload) {
+      update.lastCallbackPayload = lastCallbackPayload;
+    }
+
+    await this.financeTransactionModel.findOneAndUpdate(
+      { booking: booking._id },
+      { $set: update },
+      {
+        upsert: true,
+        new: true,
+        setDefaultsOnInsert: true,
+      },
+    );
+  }
+
+  private extractPopulatedUser(
+    value?: Types.ObjectId | string | PopulatedUserSummary,
+  ) {
+    if (
+      !value ||
+      typeof value === 'string' ||
+      value instanceof Types.ObjectId ||
+      !('name' in value || 'email' in value || 'phone' in value || 'city' in value)
+    ) {
+      return undefined;
+    }
+
+    return value as PopulatedUserSummary;
+  }
+
+  private extractPopulatedLawyer(
+    value?: Types.ObjectId | string | PopulatedLawyerSummary,
+  ) {
+    if (
+      !value ||
+      typeof value === 'string' ||
+      value instanceof Types.ObjectId ||
+      !('user' in value || 'specialization' in value)
+    ) {
+      return undefined;
+    }
+
+    return value as PopulatedLawyerSummary;
+  }
+
+  private toObjectId(value: Types.ObjectId | string) {
+    return value instanceof Types.ObjectId ? value : new Types.ObjectId(value);
   }
 
   private async ensureSlotAvailable(
@@ -743,6 +1047,10 @@ export class BookingService {
 
   private buildBillReference(bookingId: string) {
     return `BKG${bookingId.replace(/[^a-zA-Z0-9]/g, '').slice(-17)}`;
+  }
+
+  private buildReceiptNumber(txnRefNo: string) {
+    return `RCT-${txnRefNo}`;
   }
 
   private buildBookingDescription(lawyerName: string) {
@@ -864,6 +1172,18 @@ export class BookingService {
 
   private async expireStalePaymentReservations() {
     const now = new Date();
+    const staleBookings = await this.bookingModel
+      .find({
+        status: BookingStatus.AWAITING_PAYMENT,
+        'payment.status': PaymentStatus.PENDING,
+        'payment.expiresAt': { $lte: now },
+      })
+      .select('_id')
+      .lean();
+
+    if (staleBookings.length === 0) {
+      return;
+    }
 
     await this.bookingModel.updateMany(
       {
@@ -884,6 +1204,10 @@ export class BookingService {
         },
       },
     );
+
+    for (const booking of staleBookings) {
+      await this.syncFinanceTransactionForBookingId(booking._id);
+    }
   }
 
   private async markBookingPaymentExpired(bookingId: Types.ObjectId) {
@@ -902,6 +1226,7 @@ export class BookingService {
         },
       },
     );
+    await this.syncFinanceTransactionForBookingId(bookingId);
   }
 
   private isJazzCashSuccessCode(responseCode: string) {

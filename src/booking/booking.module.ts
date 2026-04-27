@@ -4,6 +4,10 @@ import { BookingController } from './booking.controller';
 import { BookingService } from './booking.service';
 import { Booking, BookingSchema } from './schemas/booking.schema';
 import {
+  FinanceTransaction,
+  FinanceTransactionSchema,
+} from './schemas/finance-transaction.schema';
+import {
   LawyerProfile,
   LawyerProfileSchema,
 } from '../lawyer/schemas/lawyer-profile.schema';
@@ -15,6 +19,7 @@ import { User, UserSchema } from '../user/schemas/user.schema';
     CommonModule,
     MongooseModule.forFeature([
       { name: Booking.name, schema: BookingSchema },
+      { name: FinanceTransaction.name, schema: FinanceTransactionSchema },
       { name: LawyerProfile.name, schema: LawyerProfileSchema },
       { name: User.name, schema: UserSchema },
     ]),

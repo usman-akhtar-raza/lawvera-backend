@@ -13,11 +13,13 @@ import {
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { AuthRateLimitGuard } from './guards/auth-rate-limit.guard';
 import { OtpMailService } from './otp-mail.service';
+import { LawyerModule } from '../lawyer/lawyer.module';
 
 @Module({
   imports: [
     ConfigModule,
     PassportModule,
+    LawyerModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],
       inject: [ConfigService],

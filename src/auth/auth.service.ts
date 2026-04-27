@@ -26,6 +26,7 @@ import { SendOtpDto } from './dto/send-otp.dto';
 import { VerifyOtpDto } from './dto/verify-otp.dto';
 import { RequestPasswordResetDto } from './dto/request-password-reset.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
+import { LawyerService } from '../lawyer/lawyer.service';
 
 const OTP_EXPIRY_MINUTES = 10;
 
@@ -38,6 +39,7 @@ export class AuthService {
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
     private readonly otpMailService: OtpMailService,
+    private readonly lawyerService: LawyerService,
   ) {}
 
   async registerClient(dto: RegisterClientDto) {
@@ -75,6 +77,16 @@ export class AuthService {
     if (existingUser) {
       if (existingUser.role !== UserRole.CLIENT) {
         throw new BadRequestException('This email is already registered with a different account type');
+      }
+
+      const switchStatus = await this.lawyerService.getProfileSwitchStatus(
+        existingUser.id,
+      );
+      if (!switchStatus.canSwitchToLawyerProfile) {
+        throw new BadRequestException(
+          switchStatus.switchToLawyerProfileReason ||
+            'You cannot switch to a lawyer profile right now.',
+        );
       }
 
       const existingProfile = await this.lawyerModel.findOne({ user: existingUser._id });
@@ -365,6 +377,10 @@ export class AuthService {
         ? await this.lawyerModel.findOne({ user: userId }).lean()
         : null;
     return { ...user, lawyerProfile };
+  }
+
+  async getProfileSwitchStatus(userId: string) {
+    return this.lawyerService.getProfileSwitchStatus(userId);
   }
 
   private async ensureEmailAvailable(email: string) {

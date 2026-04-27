@@ -6,6 +6,7 @@ import {
 import { InjectModel } from '@nestjs/mongoose';
 import { FilterQuery, Model } from 'mongoose';
 import { addDays, format } from 'date-fns';
+import { Case, CaseDocument } from '../case/schemas/case.schema';
 import {
   LawyerProfile,
   LawyerProfileDocument,
@@ -27,6 +28,21 @@ import { User, UserDocument } from '../user/schemas/user.schema';
 import { NotificationService } from '../common/services/notification.service';
 import { Booking, BookingDocument } from '../booking/schemas/booking.schema';
 import { BookingStatus } from '../common/enums/booking-status.enum';
+import { CaseStatus } from '../common/enums/case-status.enum';
+import { CaseRequestStatus } from '../common/enums/case-request-status.enum';
+
+const LAWYER_BLOCKING_BOOKING_STATUSES = [
+  BookingStatus.AWAITING_PAYMENT,
+  BookingStatus.PENDING,
+  BookingStatus.CONFIRMED,
+];
+
+export interface ProfileSwitchStatus {
+  canSwitchToLawyerProfile: boolean;
+  canSwitchToClientProfile: boolean;
+  switchToLawyerProfileReason: string | null;
+  switchToClientProfileReason: string | null;
+}
 
 @Injectable()
 export class LawyerService {
@@ -38,6 +54,8 @@ export class LawyerService {
     @InjectModel(User.name) private readonly userModel: Model<UserDocument>,
     @InjectModel(Booking.name)
     private readonly bookingModel: Model<BookingDocument>,
+    @InjectModel(Case.name)
+    private readonly caseModel: Model<CaseDocument>,
     private readonly notificationService: NotificationService,
   ) {}
 
@@ -48,6 +66,14 @@ export class LawyerService {
     }
     if (user.role !== UserRole.CLIENT) {
       throw new BadRequestException('Only clients can apply to become a lawyer');
+    }
+
+    const switchStatus = await this.buildClientSwitchStatus(userId);
+    if (!switchStatus.canSwitchToLawyerProfile) {
+      throw new BadRequestException(
+        switchStatus.switchToLawyerProfileReason ||
+          'You cannot switch to a lawyer profile right now.',
+      );
     }
 
     const existingProfile = await this.lawyerModel.findOne({ user: userId });
@@ -82,10 +108,41 @@ export class LawyerService {
     if (user.role !== UserRole.LAWYER) {
       throw new BadRequestException('User is not currently a lawyer');
     }
+
+    const switchStatus = await this.buildLawyerSwitchStatus(userId);
+    if (!switchStatus.canSwitchToClientProfile) {
+      throw new BadRequestException(
+        switchStatus.switchToClientProfileReason ||
+          'You cannot switch back to a client account right now.',
+      );
+    }
+
     user.role = UserRole.CLIENT;
     await user.save();
     // LawyerProfile is intentionally kept in DB
     return { user };
+  }
+
+  async getProfileSwitchStatus(userId: string): Promise<ProfileSwitchStatus> {
+    const user = await this.userModel.findById(userId).select('role');
+    if (!user) {
+      throw new BadRequestException('User not found');
+    }
+
+    if (user.role === UserRole.CLIENT) {
+      return this.buildClientSwitchStatus(userId);
+    }
+
+    if (user.role === UserRole.LAWYER) {
+      return this.buildLawyerSwitchStatus(userId);
+    }
+
+    return {
+      canSwitchToLawyerProfile: false,
+      canSwitchToClientProfile: false,
+      switchToLawyerProfileReason: null,
+      switchToClientProfileReason: null,
+    };
   }
 
   async create(dto: CreateLawyerDto) {
@@ -256,6 +313,118 @@ export class LawyerService {
 
   listSpecializations() {
     return this.specializationModel.find().lean();
+  }
+
+  private async buildClientSwitchStatus(
+    userId: string,
+  ): Promise<ProfileSwitchStatus> {
+    const inProgressCaseCount = await this.caseModel.countDocuments({
+      client: userId,
+      status: CaseStatus.IN_PROGRESS,
+    });
+
+    return {
+      canSwitchToLawyerProfile: inProgressCaseCount === 0,
+      canSwitchToClientProfile: false,
+      switchToLawyerProfileReason:
+        inProgressCaseCount > 0
+          ? 'You cannot switch to a lawyer profile while you have a case in progress as a client.'
+          : null,
+      switchToClientProfileReason: null,
+    };
+  }
+
+  private async buildLawyerSwitchStatus(
+    userId: string,
+  ): Promise<ProfileSwitchStatus> {
+    const profile = await this.lawyerModel.findOne({ user: userId }).select('_id');
+    if (!profile) {
+      return {
+        canSwitchToLawyerProfile: false,
+        canSwitchToClientProfile: false,
+        switchToLawyerProfileReason: null,
+        switchToClientProfileReason: 'Lawyer profile not found.',
+      };
+    }
+
+    const [activeBookingCount, activeCaseCount, pendingCaseRequestCount] =
+      await Promise.all([
+        this.bookingModel.countDocuments({
+          lawyer: profile._id,
+          status: { $in: LAWYER_BLOCKING_BOOKING_STATUSES },
+        }),
+        this.caseModel.countDocuments({
+          lawyer: profile._id,
+          status: { $ne: CaseStatus.CLOSED },
+        }),
+        this.caseModel.countDocuments({
+          status: CaseStatus.OPEN,
+          lawyerRequests: {
+            $elemMatch: {
+              lawyer: profile._id,
+              status: CaseRequestStatus.PENDING,
+            },
+          },
+        }),
+      ]);
+
+    const canSwitchToClientProfile =
+      activeBookingCount === 0 &&
+      activeCaseCount === 0 &&
+      pendingCaseRequestCount === 0;
+
+    return {
+      canSwitchToLawyerProfile: false,
+      canSwitchToClientProfile,
+      switchToLawyerProfileReason: null,
+      switchToClientProfileReason: canSwitchToClientProfile
+        ? null
+        : this.buildLawyerSwitchBlockReason(
+            activeBookingCount,
+            activeCaseCount,
+            pendingCaseRequestCount,
+          ),
+    };
+  }
+
+  private buildLawyerSwitchBlockReason(
+    activeBookingCount: number,
+    activeCaseCount: number,
+    pendingCaseRequestCount: number,
+  ) {
+    const blockers: string[] = [];
+
+    if (activeBookingCount > 0) {
+      blockers.push(
+        `${activeBookingCount} active booking${activeBookingCount === 1 ? '' : 's'}`,
+      );
+    }
+
+    if (activeCaseCount > 0) {
+      blockers.push(
+        `${activeCaseCount} active case${activeCaseCount === 1 ? '' : 's'}`,
+      );
+    }
+
+    if (pendingCaseRequestCount > 0) {
+      blockers.push(
+        `${pendingCaseRequestCount} pending case request${
+          pendingCaseRequestCount === 1 ? '' : 's'
+        }`,
+      );
+    }
+
+    if (blockers.length === 0) {
+      return 'You cannot switch back to a client account right now.';
+    }
+
+    if (blockers.length === 1) {
+      return `You cannot switch back to a client account while you still have ${blockers[0]}.`;
+    }
+
+    const lastBlocker = blockers[blockers.length - 1];
+    const leadingBlockers = blockers.slice(0, -1).join(', ');
+    return `You cannot switch back to a client account while you still have ${leadingBlockers} and ${lastBlocker}.`;
   }
 
   createSpecialization(dto: ManageSpecializationDto) {

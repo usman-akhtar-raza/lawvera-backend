@@ -69,4 +69,10 @@ export class AuthController {
   me(@CurrentUser() user: { userId: string }) {
     return this.authService.getProfile(user.userId);
   }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('profile-switch-status')
+  profileSwitchStatus(@CurrentUser() user: { userId: string }) {
+    return this.authService.getProfileSwitchStatus(user.userId);
+  }
 }

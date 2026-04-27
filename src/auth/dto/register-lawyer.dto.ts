@@ -10,6 +10,7 @@ import {
   MinLength,
   ValidateNested,
 } from 'class-validator';
+import { HasAtLeastOneSlot } from '../../common/validators/has-at-least-one-slot.decorator';
 
 class AvailabilityDto {
   @IsString()
@@ -17,7 +18,6 @@ class AvailabilityDto {
 
   @IsArray()
   @IsString({ each: true })
-  @ArrayMinSize(1)
   slots: string[];
 }
 
@@ -61,7 +61,9 @@ export class RegisterLawyerDto {
   @IsArray()
   @ValidateNested({ each: true })
   @ArrayMinSize(1)
+  @HasAtLeastOneSlot({
+    message: 'Select at least one availability slot in the week',
+  })
   @Type(() => AvailabilityDto)
   readonly availability: AvailabilityDto[];
 }
-

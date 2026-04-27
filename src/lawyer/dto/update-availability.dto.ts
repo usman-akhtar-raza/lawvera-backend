@@ -5,6 +5,7 @@ import {
   IsString,
   ValidateNested,
 } from 'class-validator';
+import { HasAtLeastOneSlot } from '../../common/validators/has-at-least-one-slot.decorator';
 
 class AvailabilityItemDto {
   @IsString()
@@ -20,6 +21,8 @@ export class UpdateAvailabilityDto {
   @ValidateNested({ each: true })
   @Type(() => AvailabilityItemDto)
   @ArrayMinSize(1)
+  @HasAtLeastOneSlot({
+    message: 'Select at least one availability slot in the week',
+  })
   availability: AvailabilityItemDto[];
 }
-

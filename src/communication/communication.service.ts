@@ -55,9 +55,12 @@ export class CommunicationService {
   ) {}
 
   async listThreads(actorId: string, role: UserRole) {
+    if (role !== UserRole.CLIENT && role !== UserRole.LAWYER) {
+      throw new ForbiddenException('You do not have access to case chats');
+    }
+
     const actorObjectId = this.toObjectId(actorId);
-    const query =
-      role === UserRole.ADMIN ? {} : { participants: actorObjectId };
+    const query = { participants: actorObjectId };
 
     const threads = await this.threadModel
       .find(query)
@@ -89,14 +92,11 @@ export class CommunicationService {
 
     return Promise.all(
       threads.map(async (thread) => {
-        const unreadCount =
-          role === UserRole.ADMIN
-            ? 0
-            : await this.messageModel.countDocuments({
-                thread: thread._id,
-                sender: { $ne: actorObjectId },
-                readBy: { $ne: actorObjectId },
-              });
+        const unreadCount = await this.messageModel.countDocuments({
+          thread: thread._id,
+          sender: { $ne: actorObjectId },
+          readBy: { $ne: actorObjectId },
+        });
 
         const populatedCase =
           typeof thread.case === 'object' &&
@@ -253,6 +253,10 @@ export class CommunicationService {
     actorId: string,
     role: UserRole,
   ): Promise<CaseAccessContext> {
+    if (role !== UserRole.CLIENT && role !== UserRole.LAWYER) {
+      throw new ForbiddenException('You do not have access to this case chat');
+    }
+
     const caseObjectId = this.toObjectId(caseId);
     const legalCase = await this.caseModel.findById(caseObjectId).lean();
 

@@ -9,7 +9,7 @@ import { SendMessageDto } from './dto/send-message.dto';
 
 @Controller('communication')
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(UserRole.CLIENT, UserRole.LAWYER, UserRole.ADMIN)
+@Roles(UserRole.CLIENT, UserRole.LAWYER)
 export class CommunicationController {
   constructor(private readonly communicationService: CommunicationService) {}
 
@@ -56,4 +56,3 @@ export class CommunicationController {
     );
   }
 }
-

@@ -17,6 +17,7 @@ import {
 } from './schemas/specialization.schema';
 import { ApplyAsLawyerDto } from '../auth/dto/apply-as-lawyer.dto';
 import { CreateLawyerDto } from './dto/create-lawyer.dto';
+import { UpdateMyLawyerProfileDto } from './dto/update-my-lawyer-profile.dto';
 import { UpdateLawyerDto } from './dto/update-lawyer.dto';
 import { UpdateAvailabilityDto } from './dto/update-availability.dto';
 import { SearchLawyersDto } from './dto/search-lawyers.dto';
@@ -293,6 +294,22 @@ export class LawyerService {
     if (!updated) {
       throw new NotFoundException('Lawyer profile not found');
     }
+    return updated;
+  }
+
+  async updateOwnProfile(userId: string, dto: UpdateMyLawyerProfileDto) {
+    const updated = await this.lawyerModel
+      .findOneAndUpdate(
+        { user: userId },
+        { $set: { consultationFee: dto.consultationFee } },
+        { new: true, runValidators: true },
+      )
+      .populate('user', 'name email city avatarUrl phone');
+
+    if (!updated) {
+      throw new NotFoundException('Lawyer profile not found');
+    }
+
     return updated;
   }
 

@@ -16,6 +16,7 @@ import { Roles } from '../common/decorators/roles.decorator';
 import { UserRole } from '../common/enums/role.enum';
 import { ApplyAsLawyerDto } from '../auth/dto/apply-as-lawyer.dto';
 import { CreateLawyerDto } from './dto/create-lawyer.dto';
+import { UpdateMyLawyerProfileDto } from './dto/update-my-lawyer-profile.dto';
 import { UpdateLawyerDto } from './dto/update-lawyer.dto';
 import { UpdateAvailabilityDto } from './dto/update-availability.dto';
 import { SearchLawyersDto } from './dto/search-lawyers.dto';
@@ -63,6 +64,16 @@ export class LawyerController {
   @Get('me/profile')
   myProfile(@CurrentUser() user: { userId: string }) {
     return this.lawyerService.findByUserId(user.userId);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.LAWYER)
+  @Patch('me/profile')
+  updateMyProfile(
+    @CurrentUser() user: { userId: string },
+    @Body() dto: UpdateMyLawyerProfileDto,
+  ) {
+    return this.lawyerService.updateOwnProfile(user.userId, dto);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)

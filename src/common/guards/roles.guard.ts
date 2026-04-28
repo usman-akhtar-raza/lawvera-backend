@@ -8,6 +8,7 @@ import { Reflector } from '@nestjs/core';
 import { Observable } from 'rxjs';
 import { ROLES_KEY } from '../decorators/roles.decorator';
 import { UserRole } from '../enums/role.enum';
+import { isAdminRole } from '../utils/role.utils';
 
 @Injectable()
 export class RolesGuard implements CanActivate {
@@ -29,11 +30,19 @@ export class RolesGuard implements CanActivate {
     const request = context.switchToHttp().getRequest();
     const user = request.user;
 
-    if (!user || !requiredRoles.includes(user.role)) {
+    if (!user) {
+      throw new ForbiddenException('You do not have permission to proceed.');
+    }
+
+    const hasRequiredRole =
+      requiredRoles.includes(user.role) ||
+      (user.role === UserRole.SUPER_ADMIN &&
+        requiredRoles.some((role) => isAdminRole(role)));
+
+    if (!hasRequiredRole) {
       throw new ForbiddenException('You do not have permission to proceed.');
     }
 
     return true;
   }
 }
-

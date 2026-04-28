@@ -4,6 +4,8 @@ import {
   Get,
   Param,
   Patch,
+  Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { UserService } from './user.service';
@@ -13,6 +15,8 @@ import { Roles } from '../common/decorators/roles.decorator';
 import { UserRole } from '../common/enums/role.enum';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { UpdateUserDto } from './dto/update-user.dto';
+import { CreateManagedUserDto } from './dto/create-managed-user.dto';
+import { SearchUsersDto } from './dto/search-users.dto';
 
 @Controller('users')
 export class UserController {
@@ -21,8 +25,15 @@ export class UserController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN)
   @Get()
-  findAll() {
-    return this.userService.findAll();
+  findAll(@Query() query: SearchUsersDto) {
+    return this.userService.findAll(query);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.SUPER_ADMIN)
+  @Get('admins')
+  findAdmins() {
+    return this.userService.findAdminUsers();
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -30,6 +41,13 @@ export class UserController {
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.userService.findById(id);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.SUPER_ADMIN)
+  @Post('managed')
+  createManagedUser(@Body() dto: CreateManagedUserDto) {
+    return this.userService.createManagedUser(dto);
   }
 
   @UseGuards(JwtAuthGuard)

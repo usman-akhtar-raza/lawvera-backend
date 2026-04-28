@@ -21,6 +21,7 @@ import { CaseRequestStatus } from '../common/enums/case-request-status.enum';
 import { LawyerStatus } from '../common/enums/lawyer-status.enum';
 import { UserRole } from '../common/enums/role.enum';
 import { NotificationService } from '../common/services/notification.service';
+import { isAdminRole } from '../common/utils/role.utils';
 
 @Injectable()
 export class CaseService {
@@ -506,7 +507,7 @@ export class CaseService {
       [CaseStatus.CLOSED]: [],
     };
 
-    if (role === UserRole.ADMIN) {
+    if (isAdminRole(role)) {
       // Admin can force any transition except from closed
       if (current === CaseStatus.CLOSED && next !== CaseStatus.CLOSED) {
         throw new BadRequestException('Closed cases cannot be reopened');

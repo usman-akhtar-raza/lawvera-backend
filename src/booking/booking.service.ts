@@ -23,6 +23,7 @@ import { NotificationService } from '../common/services/notification.service';
 import { LawyerStatus } from '../common/enums/lawyer-status.enum';
 import { UserRole } from '../common/enums/role.enum';
 import { PaymentStatus } from '../common/enums/payment-status.enum';
+import { isAdminRole } from '../common/utils/role.utils';
 
 type CurrentActor = { userId: string; role: UserRole };
 
@@ -511,7 +512,7 @@ export class BookingService {
       if (!lawyerProfile || bookingLawyerId !== lawyerProfile._id.toString()) {
         throw new UnauthorizedException();
       }
-    } else if (actor.role !== UserRole.ADMIN) {
+    } else if (!isAdminRole(actor.role)) {
       throw new UnauthorizedException();
     }
 
@@ -625,7 +626,7 @@ export class BookingService {
   }
 
   private async assertBookingAccess(booking: BookingDocument, actor: CurrentActor) {
-    if (actor.role === UserRole.ADMIN) {
+    if (isAdminRole(actor.role)) {
       return;
     }
 

@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Patch,
@@ -17,6 +18,8 @@ import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { CreateManagedUserDto } from './dto/create-managed-user.dto';
 import { SearchUsersDto } from './dto/search-users.dto';
+import { UpdateManagedUserRoleDto } from './dto/update-managed-user-role.dto';
+import { UpdateManagedUserStatusDto } from './dto/update-managed-user-status.dto';
 
 @Controller('users')
 export class UserController {
@@ -34,6 +37,38 @@ export class UserController {
   @Get('admins')
   findAdmins() {
     return this.userService.findAdminUsers();
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @Patch(':id/role')
+  updateManagedRole(
+    @Param('id') id: string,
+    @CurrentUser() actor: { userId: string; role: UserRole },
+    @Body() dto: UpdateManagedUserRoleDto,
+  ) {
+    return this.userService.updateManagedRole(actor, id, dto);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @Patch(':id/status')
+  updateManagedStatus(
+    @Param('id') id: string,
+    @CurrentUser() actor: { userId: string; role: UserRole },
+    @Body() dto: UpdateManagedUserStatusDto,
+  ) {
+    return this.userService.updateManagedStatus(actor, id, dto);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @Delete(':id')
+  deleteManagedUser(
+    @Param('id') id: string,
+    @CurrentUser() actor: { userId: string; role: UserRole },
+  ) {
+    return this.userService.deleteManagedUser(actor, id);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)

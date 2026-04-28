@@ -10,7 +10,9 @@ async function seedAdmin() {
     throw new Error('MONGO_URI is required');
   }
 
-  const email = (process.env.ADMIN_EMAIL || 'akhtarusman176+admin@gmail.com').toLowerCase();
+  const email = (
+    process.env.ADMIN_EMAIL || 'akhtarusman176+admin@gmail.com'
+  ).toLowerCase();
   const password = process.env.ADMIN_PASSWORD || 'Aa123456';
   const name = process.env.ADMIN_NAME || 'Lawvera Admin';
 
@@ -23,6 +25,8 @@ async function seedAdmin() {
   if (existing) {
     existing.role = UserRole.ADMIN;
     existing.password = hashedPassword;
+    existing.isEmailVerified = true;
+    existing.isActive = true;
     await existing.save();
     console.log(`Updated existing admin user: ${email}`);
   } else {
@@ -31,10 +35,11 @@ async function seedAdmin() {
       email,
       password: hashedPassword,
       role: UserRole.ADMIN,
+      isEmailVerified: true,
+      isActive: true,
     });
     console.log(`Created admin user: ${email}`);
   }
-
 
   await mongoose.disconnect();
 }

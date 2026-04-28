@@ -26,6 +26,7 @@ async function seedSuperAdmin() {
     existing.role = UserRole.SUPER_ADMIN;
     existing.password = hashedPassword;
     existing.isEmailVerified = true;
+    existing.isActive = true;
     await existing.save();
     console.log(`Updated existing super admin user: ${email}`);
   } else {
@@ -35,6 +36,7 @@ async function seedSuperAdmin() {
       password: hashedPassword,
       role: UserRole.SUPER_ADMIN,
       isEmailVerified: true,
+      isActive: true,
     });
     console.log(`Created super admin user: ${email}`);
   }

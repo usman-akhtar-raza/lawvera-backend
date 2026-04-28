@@ -15,7 +15,11 @@ export class User {
   @Prop({ required: true })
   password: string;
 
-  @Prop({ type: String, enum: Object.values(UserRole), default: UserRole.CLIENT })
+  @Prop({
+    type: String,
+    enum: Object.values(UserRole),
+    default: UserRole.CLIENT,
+  })
   role: UserRole;
 
   @Prop()
@@ -26,6 +30,9 @@ export class User {
 
   @Prop()
   avatarUrl?: string;
+
+  @Prop({ default: true })
+  isActive: boolean;
 
   @Prop()
   refreshTokenHash?: string;

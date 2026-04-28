@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
+import type { StringValue } from 'ms';
 import * as bcrypt from 'bcrypt';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
@@ -63,7 +64,8 @@ export class AuthService {
     await this.otpMailService.sendOtp(email, otp);
 
     return {
-      message: 'Registration successful. Please verify your email with the OTP sent.',
+      message:
+        'Registration successful. Please verify your email with the OTP sent.',
       email: user.email,
       requiresVerification: true,
     };
@@ -76,11 +78,13 @@ export class AuthService {
 
     if (existingUser) {
       if (existingUser.role !== UserRole.CLIENT) {
-        throw new BadRequestException('This email is already registered with a different account type');
+        throw new BadRequestException(
+          'This email is already registered with a different account type',
+        );
       }
 
       const switchStatus = await this.lawyerService.getProfileSwitchStatus(
-        existingUser.id,
+        String(existingUser._id),
       );
       if (!switchStatus.canSwitchToLawyerProfile) {
         throw new BadRequestException(
@@ -89,14 +93,23 @@ export class AuthService {
         );
       }
 
-      const existingProfile = await this.lawyerModel.findOne({ user: existingUser._id });
+      const existingProfile = await this.lawyerModel.findOne({
+        user: existingUser._id,
+      });
       if (existingProfile) {
-        throw new BadRequestException('A lawyer profile already exists for this account');
+        throw new BadRequestException(
+          'A lawyer profile already exists for this account',
+        );
       }
 
-      const passwordMatches = await bcrypt.compare(dto.password, existingUser.password);
+      const passwordMatches = await bcrypt.compare(
+        dto.password,
+        existingUser.password,
+      );
       if (!passwordMatches) {
-        throw new BadRequestException('Incorrect password for the existing account');
+        throw new BadRequestException(
+          'Incorrect password for the existing account',
+        );
       }
 
       existingUser.role = UserRole.LAWYER;
@@ -120,7 +133,9 @@ export class AuthService {
         const otp = this.otpMailService.generateOtp();
         const otpHash = await this.hashData(otp);
         existingUser.otpCode = otpHash;
-        existingUser.otpExpiresAt = new Date(Date.now() + OTP_EXPIRY_MINUTES * 60 * 1000);
+        existingUser.otpExpiresAt = new Date(
+          Date.now() + OTP_EXPIRY_MINUTES * 60 * 1000,
+        );
         await existingUser.save();
         await this.otpMailService.sendOtp(email, otp);
         return {
@@ -131,8 +146,10 @@ export class AuthService {
       }
 
       const tokens = await this.generateTokens(existingUser);
-      await this.setRefreshToken(existingUser.id, tokens.refreshToken);
-      const lawyerProfile = await this.lawyerModel.findOne({ user: existingUser._id }).lean();
+      await this.setRefreshToken(String(existingUser._id), tokens.refreshToken);
+      const lawyerProfile = await this.lawyerModel
+        .findOne({ user: existingUser._id })
+        .lean();
       return {
         user: this.sanitizeUser(existingUser),
         tokens,
@@ -171,17 +188,22 @@ export class AuthService {
     await this.otpMailService.sendOtp(email, otp);
 
     return {
-      message: 'Registration successful. Please verify your email with the OTP sent.',
+      message:
+        'Registration successful. Please verify your email with the OTP sent.',
       email: user.email,
       requiresVerification: true,
     };
   }
 
   async login(dto: LoginDto) {
-    const user = await this.userModel.findOne({ email: dto.email.toLowerCase() });
+    const user = await this.userModel.findOne({
+      email: dto.email.toLowerCase(),
+    });
     if (!user) {
       throw new UnauthorizedException('Invalid credentials');
     }
+
+    this.assertAccountIsActive(user);
 
     const passwordMatches = await bcrypt.compare(dto.password, user.password);
     if (!passwordMatches) {
@@ -197,16 +219,20 @@ export class AuthService {
     }
 
     const tokens = await this.generateTokens(user);
-    await this.setRefreshToken(user.id, tokens.refreshToken);
+    await this.setRefreshToken(String(user._id), tokens.refreshToken);
 
     return { user: this.sanitizeUser(user), tokens };
   }
 
   async sendOtp(dto: SendOtpDto) {
-    const user = await this.userModel.findOne({ email: dto.email.toLowerCase() });
+    const user = await this.userModel.findOne({
+      email: dto.email.toLowerCase(),
+    });
     if (!user) {
       throw new BadRequestException('No account found with this email');
     }
+
+    this.assertAccountIsActive(user);
 
     if (user.isEmailVerified) {
       return { message: 'Email is already verified' };
@@ -225,15 +251,23 @@ export class AuthService {
   }
 
   async verifyOtp(dto: VerifyOtpDto) {
-    const user = await this.userModel.findOne({ email: dto.email.toLowerCase() });
+    const user = await this.userModel.findOne({
+      email: dto.email.toLowerCase(),
+    });
     if (!user) {
       throw new BadRequestException('No account found with this email');
     }
 
+    this.assertAccountIsActive(user);
+
     if (user.isEmailVerified) {
       const tokens = await this.generateTokens(user);
-      await this.setRefreshToken(user.id, tokens.refreshToken);
-      return { message: 'Email already verified', user: this.sanitizeUser(user), tokens };
+      await this.setRefreshToken(String(user._id), tokens.refreshToken);
+      return {
+        message: 'Email already verified',
+        user: this.sanitizeUser(user),
+        tokens,
+      };
     }
 
     if (!user.otpCode || !user.otpExpiresAt) {
@@ -241,7 +275,9 @@ export class AuthService {
     }
 
     if (new Date() > user.otpExpiresAt) {
-      throw new BadRequestException('OTP has expired. Please request a new one.');
+      throw new BadRequestException(
+        'OTP has expired. Please request a new one.',
+      );
     }
 
     const otpMatches = await bcrypt.compare(dto.otp, user.otpCode);
@@ -255,7 +291,7 @@ export class AuthService {
     await user.save();
 
     const tokens = await this.generateTokens(user);
-    await this.setRefreshToken(user.id, tokens.refreshToken);
+    await this.setRefreshToken(String(user._id), tokens.refreshToken);
 
     const lawyerProfile =
       user.role === UserRole.LAWYER
@@ -266,12 +302,16 @@ export class AuthService {
       message: 'Email verified successfully',
       user: this.sanitizeUser(user),
       tokens,
-      ...(lawyerProfile ? { lawyerProfile, profileStatus: LawyerStatus.PENDING } : {}),
+      ...(lawyerProfile
+        ? { lawyerProfile, profileStatus: LawyerStatus.PENDING }
+        : {}),
     };
   }
 
   async requestPasswordReset(dto: RequestPasswordResetDto) {
-    const user = await this.userModel.findOne({ email: dto.email.toLowerCase() });
+    const user = await this.userModel.findOne({
+      email: dto.email.toLowerCase(),
+    });
     const response = {
       message:
         'If an account exists for this email, a password reset code has been sent.',
@@ -280,6 +320,8 @@ export class AuthService {
     if (!user) {
       return response;
     }
+
+    this.assertAccountIsActive(user);
 
     const otp = this.otpMailService.generateOtp();
     user.passwordResetCode = await this.hashData(otp);
@@ -294,10 +336,14 @@ export class AuthService {
   }
 
   async resetPassword(dto: ResetPasswordDto) {
-    const user = await this.userModel.findOne({ email: dto.email.toLowerCase() });
+    const user = await this.userModel.findOne({
+      email: dto.email.toLowerCase(),
+    });
     if (!user) {
       throw new BadRequestException('Invalid or expired password reset code.');
     }
+
+    this.assertAccountIsActive(user);
 
     if (!user.passwordResetCode || !user.passwordResetExpiresAt) {
       throw new BadRequestException('Invalid or expired password reset code.');
@@ -344,7 +390,9 @@ export class AuthService {
       throw new UnauthorizedException('Invalid refresh token');
     }
 
-    if (payload.email !== user.email || payload.role !== user.role) {
+    this.assertAccountIsActive(user);
+
+    if (payload.email !== user.email) {
       throw new UnauthorizedException('Invalid refresh token');
     }
 
@@ -358,7 +406,7 @@ export class AuthService {
     }
 
     const tokens = await this.generateTokens(user);
-    await this.setRefreshToken(user.id, tokens.refreshToken);
+    await this.setRefreshToken(String(user._id), tokens.refreshToken);
     return { user: this.sanitizeUser(user), tokens };
   }
 
@@ -396,8 +444,11 @@ export class AuthService {
   }
 
   private async generateTokens(user: UserDocument): Promise<AuthTokens> {
+    const refreshExpiration = (this.configService.get<string>(
+      'JWT_REFRESH_EXPIRATION',
+    ) ?? '7d') as StringValue;
     const payload = {
-      sub: user.id,
+      sub: String(user._id),
       email: user.email,
       role: user.role,
     };
@@ -405,8 +456,7 @@ export class AuthService {
     const accessToken = await this.jwtService.signAsync(payload);
     const refreshToken = await this.jwtService.signAsync(payload, {
       secret: this.configService.getOrThrow<string>('JWT_REFRESH_SECRET'),
-      expiresIn: (this.configService.get<string>('JWT_REFRESH_EXPIRATION', '7d') ||
-        '7d') as any,
+      expiresIn: refreshExpiration,
     });
 
     return { accessToken, refreshToken };
@@ -420,16 +470,21 @@ export class AuthService {
   }
 
   private sanitizeUser(user: UserDocument) {
-    const obj = user.toObject();
-    const {
-      password,
-      refreshTokenHash,
-      otpCode,
-      otpExpiresAt,
-      passwordResetCode,
-      passwordResetExpiresAt,
-      ...sanitized
-    } = obj;
+    const sanitized = user.toObject() as unknown as Record<string, unknown>;
+    delete sanitized.password;
+    delete sanitized.refreshTokenHash;
+    delete sanitized.otpCode;
+    delete sanitized.otpExpiresAt;
+    delete sanitized.passwordResetCode;
+    delete sanitized.passwordResetExpiresAt;
     return sanitized;
+  }
+
+  private assertAccountIsActive(user: Pick<User, 'isActive'>) {
+    if (user.isActive === false) {
+      throw new UnauthorizedException(
+        'This account has been disabled. Contact support for assistance.',
+      );
+    }
   }
 }

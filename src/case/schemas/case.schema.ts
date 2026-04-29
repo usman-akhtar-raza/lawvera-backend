@@ -3,8 +3,116 @@ import { HydratedDocument, SchemaTypes, Types } from 'mongoose';
 import { CaseStatus } from '../../common/enums/case-status.enum';
 import { CaseCategory } from '../../common/enums/case-category.enum';
 import { CaseRequestStatus } from '../../common/enums/case-request-status.enum';
+import { CaseEscrowStatus } from '../../common/enums/case-escrow-status.enum';
+import { CaseEscrowDisputeStatus } from '../../common/enums/case-escrow-dispute-status.enum';
 
 export type CaseDocument = HydratedDocument<Case>;
+
+@Schema({ _id: false })
+export class CaseEscrow {
+  @Prop({ default: 'paypal' })
+  provider: string;
+
+  @Prop({
+    type: String,
+    enum: Object.values(CaseEscrowStatus),
+    default: CaseEscrowStatus.NOT_STARTED,
+  })
+  status: CaseEscrowStatus;
+
+  @Prop({
+    type: String,
+    enum: Object.values(CaseEscrowDisputeStatus),
+    default: CaseEscrowDisputeStatus.NONE,
+  })
+  disputeStatus: CaseEscrowDisputeStatus;
+
+  @Prop({ min: 0 })
+  amountMinor?: number;
+
+  @Prop({ trim: true, uppercase: true })
+  currency?: string;
+
+  @Prop({ min: 0 })
+  platformCommissionRateBps?: number;
+
+  @Prop({ min: 0 })
+  platformCommissionMinor?: number;
+
+  @Prop({ min: 0 })
+  lawyerAmountMinor?: number;
+
+  @Prop({ trim: true })
+  invoiceId?: string;
+
+  @Prop({ trim: true })
+  paypalOrderId?: string;
+
+  @Prop({ trim: true })
+  paypalCaptureId?: string;
+
+  @Prop({ trim: true })
+  paypalPayoutBatchId?: string;
+
+  @Prop({ trim: true })
+  paypalPayoutItemId?: string;
+
+  @Prop({ trim: true })
+  paypalPayoutStatus?: string;
+
+  @Prop({ trim: true })
+  paypalRefundId?: string;
+
+  @Prop({ trim: true })
+  payerId?: string;
+
+  @Prop({ trim: true, lowercase: true })
+  payerEmail?: string;
+
+  @Prop({ trim: true })
+  lastPayPalEvent?: string;
+
+  @Prop({ trim: true })
+  lastWebhookId?: string;
+
+  @Prop({ trim: true })
+  lastIpnTxnId?: string;
+
+  @Prop({ trim: true })
+  lastError?: string;
+
+  @Prop()
+  initiatedAt?: Date;
+
+  @Prop()
+  approvedAt?: Date;
+
+  @Prop()
+  capturedAt?: Date;
+
+  @Prop()
+  releaseRequestedAt?: Date;
+
+  @Prop()
+  releasedAt?: Date;
+
+  @Prop()
+  refundedAt?: Date;
+
+  @Prop()
+  cancelledAt?: Date;
+
+  @Prop()
+  disputedAt?: Date;
+
+  @Prop()
+  disputeResolvedAt?: Date;
+
+  @Prop()
+  lastWebhookAt?: Date;
+}
+
+export const CaseEscrowSchema = SchemaFactory.createForClass(CaseEscrow);
 
 @Schema({ timestamps: true })
 export class Case {
@@ -67,6 +175,9 @@ export class Case {
   @Prop()
   closedAt?: Date;
 
+  @Prop({ type: CaseEscrowSchema, default: {} })
+  escrow: CaseEscrow;
+
   @Prop({
     type: [
       {
@@ -93,3 +204,6 @@ CaseSchema.index({ lawyer: 1, status: 1 });
 CaseSchema.index({ 'lawyerRequests.lawyer': 1, status: 1 });
 CaseSchema.index({ status: 1, createdAt: -1 });
 CaseSchema.index({ category: 1 });
+CaseSchema.index({ 'escrow.paypalOrderId': 1 }, { unique: true, sparse: true });
+CaseSchema.index({ 'escrow.paypalCaptureId': 1 }, { unique: true, sparse: true });
+CaseSchema.index({ 'escrow.paypalPayoutBatchId': 1 }, { sparse: true });

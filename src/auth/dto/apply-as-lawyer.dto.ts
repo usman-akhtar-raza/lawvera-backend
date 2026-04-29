@@ -2,6 +2,7 @@ import { Type } from 'class-transformer';
 import {
   ArrayMinSize,
   IsArray,
+  IsEmail,
   IsNumber,
   IsOptional,
   IsString,
@@ -33,6 +34,10 @@ export class ApplyAsLawyerDto {
   @IsNumber()
   @Min(0)
   readonly consultationFee: number;
+
+  @IsOptional()
+  @IsEmail()
+  readonly paypalEmail?: string;
 
   @IsOptional()
   @IsString()

@@ -93,6 +93,7 @@ export class LawyerService {
       experienceYears: dto.experienceYears,
       city: dto.city,
       consultationFee: dto.consultationFee,
+      paypalEmail: dto.paypalEmail?.toLowerCase(),
       education: dto.education,
       description: dto.description,
       profilePhotoUrl: dto.profilePhotoUrl,
@@ -301,7 +302,12 @@ export class LawyerService {
     const updated = await this.lawyerModel
       .findOneAndUpdate(
         { user: userId },
-        { $set: { consultationFee: dto.consultationFee } },
+        {
+          $set: {
+            consultationFee: dto.consultationFee,
+            paypalEmail: dto.paypalEmail?.toLowerCase() || undefined,
+          },
+        },
         { new: true, runValidators: true },
       )
       .populate('user', 'name email city avatarUrl phone');

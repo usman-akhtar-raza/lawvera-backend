@@ -9,4 +9,3 @@ export class UpdateBookingStatusDto {
   @IsString()
   notes?: string;
 }
-

@@ -9,6 +9,7 @@ import {
 } from '../lawyer/schemas/lawyer-profile.schema';
 import { CommonModule } from '../common/common.module';
 import { User, UserSchema } from '../user/schemas/user.schema';
+import { Case, CaseSchema } from '../case/schemas/case.schema';
 
 @Module({
   imports: [
@@ -17,6 +18,7 @@ import { User, UserSchema } from '../user/schemas/user.schema';
       { name: Booking.name, schema: BookingSchema },
       { name: LawyerProfile.name, schema: LawyerProfileSchema },
       { name: User.name, schema: UserSchema },
+      { name: Case.name, schema: CaseSchema },
     ]),
   ],
   controllers: [BookingController],

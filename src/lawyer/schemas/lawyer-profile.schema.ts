@@ -50,6 +50,9 @@ export class LawyerProfile {
   @Prop({ required: true })
   consultationFee: number;
 
+  @Prop({ trim: true, lowercase: true })
+  paypalEmail?: string;
+
   @Prop({ type: [AvailabilitySlot], default: [] })
   availability: AvailabilitySlot[];
 

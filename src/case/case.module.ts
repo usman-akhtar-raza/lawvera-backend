@@ -3,6 +3,7 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { CaseController } from './case.controller';
 import { CaseService } from './case.service';
 import { Case, CaseSchema } from './schemas/case.schema';
+import { PaypalEscrowService } from './paypal-escrow.service';
 import {
   LawyerProfile,
   LawyerProfileSchema,
@@ -18,7 +19,7 @@ import { CommonModule } from '../common/common.module';
     ]),
   ],
   controllers: [CaseController],
-  providers: [CaseService],
+  providers: [CaseService, PaypalEscrowService],
   exports: [CaseService],
 })
 export class CaseModule {}

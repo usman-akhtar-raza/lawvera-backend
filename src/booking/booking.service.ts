@@ -16,6 +16,7 @@ import {
   LawyerProfileDocument,
 } from '../lawyer/schemas/lawyer-profile.schema';
 import { User, UserDocument } from '../user/schemas/user.schema';
+import { Case, CaseDocument } from '../case/schemas/case.schema';
 import { CreateBookingDto } from './dto/create-booking.dto';
 import { BookingStatus } from '../common/enums/booking-status.enum';
 import { UpdateBookingStatusDto } from './dto/update-booking-status.dto';
@@ -25,6 +26,7 @@ import { LawyerStatus } from '../common/enums/lawyer-status.enum';
 import { UserRole } from '../common/enums/role.enum';
 import { PaymentStatus } from '../common/enums/payment-status.enum';
 import { isAdminRole } from '../common/utils/role.utils';
+import { CaseEscrowStatus } from '../common/enums/case-escrow-status.enum';
 
 type CurrentActor = { userId: string; role: UserRole };
 
@@ -54,6 +56,29 @@ type PopulatedLawyerSummary = {
   user?: PopulatedUserSummary;
 };
 
+type FinanceTransactionRecord = {
+  id: string;
+  bookingId: string | null;
+  caseId: string | null;
+  sourceType: 'booking' | 'case';
+  title: string;
+  direction: 'paid' | 'received';
+  counterparty: ReturnType<BookingService['buildCounterpartySummary']>;
+  lawyerSpecialization: string | null;
+  amountMinor: number;
+  currency: string;
+  provider: string;
+  paymentStatus: string;
+  bookingStatus: string | null;
+  caseStatus: string | null;
+  escrowStatus: string | null;
+  txnRefNo: string;
+  paidAt: string | null;
+  appointmentDate: string | null;
+  slotTime: string | null;
+  reason: string | null;
+};
+
 @Injectable()
 export class BookingService {
   private static readonly DEFAULT_PAYMENT_WINDOW_MINUTES = 15;
@@ -65,6 +90,8 @@ export class BookingService {
     private readonly lawyerModel: Model<LawyerProfileDocument>,
     @InjectModel(User.name)
     private readonly userModel: Model<UserDocument>,
+    @InjectModel(Case.name)
+    private readonly caseModel: Model<CaseDocument>,
     private readonly notificationService: NotificationService,
     private readonly configService: ConfigService,
   ) {}
@@ -397,42 +424,107 @@ export class BookingService {
     await this.expireStalePaymentReservations();
 
     if (actor.role === UserRole.CLIENT) {
-      const bookings = await this.bookingModel
-        .find({
-          client: actor.userId,
-          'payment.status': PaymentStatus.SUCCEEDED,
-        })
-        .populate({
-          path: 'lawyer',
-          select: 'specialization user',
-          populate: { path: 'user', select: 'name email city phone' },
-        })
-        .sort({ 'payment.paidAt': -1, createdAt: -1 })
-        .lean();
+      const [bookings, cases] = await Promise.all([
+        this.bookingModel
+          .find({
+            client: actor.userId,
+            'payment.status': PaymentStatus.SUCCEEDED,
+          })
+          .populate({
+            path: 'lawyer',
+            select: 'specialization user',
+            populate: { path: 'user', select: 'name email city phone' },
+          })
+          .sort({ 'payment.paidAt': -1, createdAt: -1 })
+          .lean(),
+        this.caseModel
+          .find({
+            client: actor.userId,
+            'escrow.status': {
+              $in: [
+                CaseEscrowStatus.HELD,
+                CaseEscrowStatus.RELEASE_PENDING,
+                CaseEscrowStatus.RELEASED,
+                CaseEscrowStatus.REFUND_PENDING,
+                CaseEscrowStatus.REFUNDED,
+              ],
+            },
+          })
+          .populate({
+            path: 'lawyer',
+            select: 'specialization user',
+            populate: { path: 'user', select: 'name email city phone' },
+          })
+          .sort({ 'escrow.capturedAt': -1, updatedAt: -1 })
+          .lean(),
+      ]);
 
-      return this.buildFinanceResponse(
-        'client',
-        bookings.map((booking) => {
-          const lawyer = booking.lawyer as PopulatedLawyerSummary | undefined;
-          return {
-            id: String(booking._id),
-            bookingId: String(booking._id),
-            direction: 'paid' as const,
-            counterparty: this.buildCounterpartySummary(lawyer?.user),
-            lawyerSpecialization: lawyer?.specialization || null,
-            amountMinor: booking.payment.amountMinor,
-            currency: booking.payment.currency,
-            provider: booking.payment.provider,
-            paymentStatus: booking.payment.status,
-            bookingStatus: booking.status,
-            txnRefNo: booking.payment.txnRefNo,
-            paidAt: booking.payment.paidAt?.toISOString() || null,
-            appointmentDate: booking.slotDate.toISOString(),
-            slotTime: booking.slotTime,
-            reason: booking.reason || null,
-          };
-        }),
-      );
+      const bookingTransactions = bookings.map((booking) => {
+        const lawyer = booking.lawyer as PopulatedLawyerSummary | undefined;
+        return {
+          id: String(booking._id),
+          bookingId: String(booking._id),
+          caseId: null,
+          sourceType: 'booking' as const,
+          title: booking.reason || 'Consultation booking',
+          direction: 'paid' as const,
+          counterparty: this.buildCounterpartySummary(lawyer?.user),
+          lawyerSpecialization: lawyer?.specialization || null,
+          amountMinor: booking.payment.amountMinor,
+          currency: booking.payment.currency,
+          provider: booking.payment.provider,
+          paymentStatus: booking.payment.status,
+          bookingStatus: booking.status,
+          caseStatus: null,
+          escrowStatus: null,
+          txnRefNo: booking.payment.txnRefNo,
+          paidAt: booking.payment.paidAt?.toISOString() || null,
+          appointmentDate: booking.slotDate.toISOString(),
+          slotTime: booking.slotTime,
+          reason: booking.reason || null,
+        } satisfies FinanceTransactionRecord;
+      });
+
+      const caseTransactions = cases.map((legalCase) => {
+        const lawyer = legalCase.lawyer as PopulatedLawyerSummary | undefined;
+        return {
+          id: String(legalCase._id),
+          bookingId: null,
+          caseId: String(legalCase._id),
+          sourceType: 'case' as const,
+          title: legalCase.title,
+          direction: 'paid' as const,
+          counterparty: this.buildCounterpartySummary(lawyer?.user),
+          lawyerSpecialization: lawyer?.specialization || null,
+          amountMinor: legalCase.escrow?.amountMinor || 0,
+          currency: legalCase.escrow?.currency || 'USD',
+          provider: legalCase.escrow?.provider || 'paypal',
+          paymentStatus:
+            legalCase.escrow?.status === CaseEscrowStatus.REFUNDED
+              ? 'refunded'
+              : 'succeeded',
+          bookingStatus: null,
+          caseStatus: legalCase.status,
+          escrowStatus: legalCase.escrow?.status || null,
+          txnRefNo:
+            legalCase.escrow?.paypalCaptureId ||
+            legalCase.escrow?.paypalOrderId ||
+            legalCase.escrow?.invoiceId ||
+            'n/a',
+          paidAt:
+            legalCase.escrow?.capturedAt?.toISOString() ||
+            legalCase.escrow?.approvedAt?.toISOString() ||
+            null,
+          appointmentDate: null,
+          slotTime: null,
+          reason: legalCase.description || null,
+        } satisfies FinanceTransactionRecord;
+      });
+
+      return this.buildFinanceResponse('client', [
+        ...bookingTransactions,
+        ...caseTransactions,
+      ]);
     }
 
     if (actor.role === UserRole.LAWYER) {
@@ -441,37 +533,83 @@ export class BookingService {
         throw new NotFoundException('Lawyer profile not found');
       }
 
-      const bookings = await this.bookingModel
-        .find({
-          lawyer: profile._id,
-          'payment.status': PaymentStatus.SUCCEEDED,
-        })
-        .populate('client', 'name email city phone')
-        .sort({ 'payment.paidAt': -1, createdAt: -1 })
-        .lean();
+      const [bookings, cases] = await Promise.all([
+        this.bookingModel
+          .find({
+            lawyer: profile._id,
+            'payment.status': PaymentStatus.SUCCEEDED,
+          })
+          .populate('client', 'name email city phone')
+          .sort({ 'payment.paidAt': -1, createdAt: -1 })
+          .lean(),
+        this.caseModel
+          .find({
+            lawyer: profile._id,
+            'escrow.status': CaseEscrowStatus.RELEASED,
+          })
+          .populate('client', 'name email city phone')
+          .sort({ 'escrow.releasedAt': -1, updatedAt: -1 })
+          .lean(),
+      ]);
 
-      return this.buildFinanceResponse(
-        'lawyer',
-        bookings.map((booking) => ({
-          id: String(booking._id),
-          bookingId: String(booking._id),
-          direction: 'received' as const,
-          counterparty: this.buildCounterpartySummary(
-            booking.client as PopulatedUserSummary,
-          ),
-          lawyerSpecialization: profile.specialization || null,
-          amountMinor: booking.payment.amountMinor,
-          currency: booking.payment.currency,
-          provider: booking.payment.provider,
-          paymentStatus: booking.payment.status,
-          bookingStatus: booking.status,
-          txnRefNo: booking.payment.txnRefNo,
-          paidAt: booking.payment.paidAt?.toISOString() || null,
-          appointmentDate: booking.slotDate.toISOString(),
-          slotTime: booking.slotTime,
-          reason: booking.reason || null,
-        })),
-      );
+      const bookingTransactions = bookings.map((booking) => ({
+        id: String(booking._id),
+        bookingId: String(booking._id),
+        caseId: null,
+        sourceType: 'booking' as const,
+        title: booking.reason || 'Consultation booking',
+        direction: 'received' as const,
+        counterparty: this.buildCounterpartySummary(
+          booking.client as PopulatedUserSummary,
+        ),
+        lawyerSpecialization: profile.specialization || null,
+        amountMinor: booking.payment.amountMinor,
+        currency: booking.payment.currency,
+        provider: booking.payment.provider,
+        paymentStatus: booking.payment.status,
+        bookingStatus: booking.status,
+        caseStatus: null,
+        escrowStatus: null,
+        txnRefNo: booking.payment.txnRefNo,
+        paidAt: booking.payment.paidAt?.toISOString() || null,
+        appointmentDate: booking.slotDate.toISOString(),
+        slotTime: booking.slotTime,
+        reason: booking.reason || null,
+      } satisfies FinanceTransactionRecord));
+
+      const caseTransactions = cases.map((legalCase) => ({
+        id: String(legalCase._id),
+        bookingId: null,
+        caseId: String(legalCase._id),
+        sourceType: 'case' as const,
+        title: legalCase.title,
+        direction: 'received' as const,
+        counterparty: this.buildCounterpartySummary(
+          legalCase.client as PopulatedUserSummary,
+        ),
+        lawyerSpecialization: profile.specialization || null,
+        amountMinor: legalCase.escrow?.lawyerAmountMinor || 0,
+        currency: legalCase.escrow?.currency || 'USD',
+        provider: legalCase.escrow?.provider || 'paypal',
+        paymentStatus: 'succeeded',
+        bookingStatus: null,
+        caseStatus: legalCase.status,
+        escrowStatus: legalCase.escrow?.status || null,
+        txnRefNo:
+          legalCase.escrow?.paypalPayoutBatchId ||
+          legalCase.escrow?.paypalPayoutItemId ||
+          legalCase.escrow?.paypalCaptureId ||
+          'n/a',
+        paidAt: legalCase.escrow?.releasedAt?.toISOString() || null,
+        appointmentDate: null,
+        slotTime: null,
+        reason: legalCase.description || null,
+      } satisfies FinanceTransactionRecord));
+
+      return this.buildFinanceResponse('lawyer', [
+        ...bookingTransactions,
+        ...caseTransactions,
+      ]);
     }
 
     throw new UnauthorizedException();
@@ -748,12 +886,13 @@ export class BookingService {
 
   private buildFinanceResponse(
     role: 'client' | 'lawyer',
-    transactions: Array<{
-      amountMinor: number;
-      currency: string;
-      [key: string]: unknown;
-    }>,
+    transactions: FinanceTransactionRecord[],
   ) {
+    const sortedTransactions = [...transactions].sort((left, right) => {
+      const leftDate = left.paidAt ? new Date(left.paidAt).getTime() : 0;
+      const rightDate = right.paidAt ? new Date(right.paidAt).getTime() : 0;
+      return rightDate - leftDate;
+    });
     const totalAmountMinor = transactions.reduce(
       (sum, transaction) => sum + transaction.amountMinor,
       0,
@@ -764,9 +903,9 @@ export class BookingService {
       summary: {
         totalTransactions: transactions.length,
         totalAmountMinor,
-        currency: transactions[0]?.currency || 'PKR',
+        currency: sortedTransactions[0]?.currency || 'PKR',
       },
-      transactions,
+      transactions: sortedTransactions,
     };
   }
 

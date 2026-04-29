@@ -47,6 +47,10 @@ export class RegisterLawyerDto {
   readonly consultationFee: number;
 
   @IsOptional()
+  @IsEmail()
+  readonly paypalEmail?: string;
+
+  @IsOptional()
   @IsString()
   readonly education?: string;
 

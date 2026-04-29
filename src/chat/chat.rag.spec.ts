@@ -62,6 +62,9 @@ describe('ChatService RAG retrieval', () => {
       },
     ]);
     expect(result.retrievedPreview[0]?.sourceTitle).toBe('Contract Law Handbook');
+    expect(result.retrievedPreview[0]?.snippet).toBe(
+      'Offer and acceptance are core elements of contract formation.',
+    );
     expect(createMock).toHaveBeenCalledTimes(2);
   });
 
@@ -110,6 +113,26 @@ describe('ChatService RAG retrieval', () => {
     expect(result.retrievedPreview).toEqual([]);
     expect(retrieveChunksMock).not.toHaveBeenCalled();
     expect(findMock).not.toHaveBeenCalled();
+    expect(createMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('rejects non-legal questions with a friendly scope message', async () => {
+    const service = new ChatService(
+      chatModelMock as any,
+      configServiceMock as any,
+      lawSourcesServiceMock as any,
+    );
+
+    const result = await service.ask('user-1', UserRole.CLIENT, {
+      message: 'What is the weather in Lahore today?',
+    });
+
+    expect(result.answer).toContain(
+      'I’m here to help with legal information, legal research, and questions related to legal services on Lawvera.',
+    );
+    expect(result.citations).toEqual([]);
+    expect(result.retrievedPreview).toEqual([]);
+    expect(retrieveChunksMock).not.toHaveBeenCalled();
     expect(createMock).toHaveBeenCalledTimes(2);
   });
 });

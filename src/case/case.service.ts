@@ -451,12 +451,6 @@ export class CaseService {
       throw new NotFoundException('Assigned lawyer profile not found');
     }
 
-    if (!lawyerProfile.paypalEmail) {
-      throw new BadRequestException(
-        'The assigned lawyer has not configured a PayPal payout email yet.',
-      );
-    }
-
     const amountMinor = this.amountToMinor(dto.amount);
     const currency =
       dto.currency?.trim().toUpperCase() ||
@@ -468,16 +462,24 @@ export class CaseService {
     const lawyerAmountMinor = amountMinor - platformCommissionMinor;
     const invoiceId = this.buildInvoiceId(found._id.toString());
     const createdAt = new Date();
+    const checkoutMode = dto.checkoutMode || 'wallet';
 
     const order = await this.paypalEscrowService.createCheckoutOrder({
       amountMinor,
       brandName: this.paypalEscrowService.getBrandName(),
-      cancelUrl: this.buildEscrowCancelUrl(found._id.toString()),
       caseId: found._id.toString(),
+      checkoutMode,
+      cancelUrl:
+        checkoutMode === 'wallet'
+          ? this.buildEscrowCancelUrl(found._id.toString())
+          : undefined,
       currency,
       description: `Legal case escrow for ${found.title}`.slice(0, 127),
       invoiceId,
-      returnUrl: this.buildEscrowReturnUrl(found._id.toString()),
+      returnUrl:
+        checkoutMode === 'wallet'
+          ? this.buildEscrowReturnUrl(found._id.toString())
+          : undefined,
     });
 
     found.escrow = {
@@ -527,6 +529,23 @@ export class CaseService {
       case: await this.populateCaseById(found._id.toString()),
       approvalUrl: order.approvalUrl,
       orderId: order.orderId,
+    };
+  }
+
+  async getPayPalCardConfig() {
+    const clientId = this.paypalEscrowService.getClientId();
+    if (!clientId) {
+      throw new InternalServerErrorException(
+        'PayPal client ID is not configured for card checkout.',
+      );
+    }
+
+    const clientToken = await this.paypalEscrowService.generateClientToken();
+
+    return {
+      clientId,
+      clientToken,
+      currency: this.paypalEscrowService.getDefaultCurrency(),
     };
   }
 

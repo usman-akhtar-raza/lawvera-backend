@@ -127,6 +127,13 @@ export class CaseController {
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.CLIENT, UserRole.ADMIN)
+  @Get('payments/paypal/card-config')
+  getPayPalCardConfig() {
+    return this.caseService.getPayPalCardConfig();
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.CLIENT, UserRole.LAWYER, UserRole.ADMIN)
   @Get(':id')
   findOne(

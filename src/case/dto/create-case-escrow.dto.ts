@@ -1,4 +1,4 @@
-import { IsNumber, IsOptional, Matches, Max, Min } from 'class-validator';
+import { IsIn, IsNumber, IsOptional, Matches, Max, Min } from 'class-validator';
 
 export class CreateCaseEscrowDto {
   @IsNumber()
@@ -9,4 +9,8 @@ export class CreateCaseEscrowDto {
   @IsOptional()
   @Matches(/^[A-Z]{3}$/)
   currency?: string;
+
+  @IsOptional()
+  @IsIn(['wallet', 'card'])
+  checkoutMode?: 'wallet' | 'card';
 }

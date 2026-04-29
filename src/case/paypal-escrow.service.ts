@@ -17,16 +17,17 @@ type PayPalRequestOptions = {
 export type CreatePayPalOrderInput = {
   amountMinor: number;
   brandName: string;
-  cancelUrl: string;
   caseId: string;
+  checkoutMode: 'wallet' | 'card';
+  cancelUrl?: string;
   currency: string;
   description: string;
   invoiceId: string;
-  returnUrl: string;
+  returnUrl?: string;
 };
 
 export type PayPalOrderResult = {
-  approvalUrl: string;
+  approvalUrl?: string;
   orderId: string;
   raw: Record<string, any>;
 };
@@ -75,7 +76,7 @@ export class PaypalEscrowService {
   getDefaultCurrency() {
     return (
       this.configService.get<string>('PAYPAL_DEFAULT_CURRENCY')?.trim().toUpperCase() ||
-      'USD'
+      'PHP'
     );
   }
 
@@ -83,9 +84,35 @@ export class PaypalEscrowService {
     return this.configService.get<string>('PAYPAL_BRAND_NAME')?.trim() || 'Lawvera';
   }
 
+  getClientId() {
+    return this.configService.get<string>('PAYPAL_CLIENT_ID')?.trim();
+  }
+
   async createCheckoutOrder(
     input: CreatePayPalOrderInput,
   ): Promise<PayPalOrderResult> {
+    const paymentSource =
+      input.checkoutMode === 'card'
+        ? {
+            card: {
+              attributes: {
+                verification: {
+                  method: 'SCA_WHEN_REQUIRED',
+                },
+              },
+            },
+          }
+        : {
+            paypal: {
+              experience_context: {
+                brand_name: input.brandName,
+                user_action: 'PAY_NOW',
+                return_url: input.returnUrl,
+                cancel_url: input.cancelUrl,
+              },
+            },
+          };
+
     const response = await this.request<Record<string, any>>(
       '/v2/checkout/orders',
       {
@@ -108,16 +135,7 @@ export class PaypalEscrowService {
               },
             },
           ],
-          payment_source: {
-            paypal: {
-              experience_context: {
-                brand_name: input.brandName,
-                user_action: 'PAY_NOW',
-                return_url: input.returnUrl,
-                cancel_url: input.cancelUrl,
-              },
-            },
-          },
+          payment_source: paymentSource,
         },
       },
     );
@@ -129,7 +147,16 @@ export class PaypalEscrowService {
         )?.href
       : undefined;
 
-    if (!response.id || !approvalUrl) {
+    if (!response.id) {
+      this.logger.error(
+        `PayPal order response did not include an order ID. Status: ${
+          response.status || 'unknown'
+        }. Payload: ${JSON.stringify(response)}`,
+      );
+      throw new BadGatewayException('PayPal did not return an order ID.');
+    }
+
+    if (input.checkoutMode === 'wallet' && !approvalUrl) {
       this.logger.error(
         `PayPal order ${response.id || 'unknown'} did not include an approval URL. Status: ${
           response.status || 'unknown'
@@ -296,6 +323,24 @@ export class PaypalEscrowService {
     });
 
     return (await response.text()).trim();
+  }
+
+  async generateClientToken() {
+    const response = await this.request<Record<string, any>>(
+      '/v1/identity/generate-token',
+      {
+        method: 'POST',
+        body: {},
+      },
+    );
+
+    if (!response.client_token) {
+      throw new BadGatewayException(
+        'PayPal did not return a client token for card checkout.',
+      );
+    }
+
+    return response.client_token as string;
   }
 
   private getHeader(

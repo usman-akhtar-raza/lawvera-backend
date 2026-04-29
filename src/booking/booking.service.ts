@@ -497,7 +497,7 @@ export class BookingService {
           counterparty: this.buildCounterpartySummary(lawyer?.user),
           lawyerSpecialization: lawyer?.specialization || null,
           amountMinor: legalCase.escrow?.amountMinor || 0,
-          currency: legalCase.escrow?.currency || 'USD',
+          currency: legalCase.escrow?.currency || 'PHP',
           provider: legalCase.escrow?.provider || 'paypal',
           paymentStatus:
             legalCase.escrow?.status === CaseEscrowStatus.REFUNDED
@@ -589,7 +589,7 @@ export class BookingService {
         ),
         lawyerSpecialization: profile.specialization || null,
         amountMinor: legalCase.escrow?.lawyerAmountMinor || 0,
-        currency: legalCase.escrow?.currency || 'USD',
+        currency: legalCase.escrow?.currency || 'PHP',
         provider: legalCase.escrow?.provider || 'paypal',
         paymentStatus: 'succeeded',
         bookingStatus: null,

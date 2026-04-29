@@ -16,6 +16,7 @@ import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { CreateBookingDto } from './dto/create-booking.dto';
 import { UpdateBookingStatusDto } from './dto/update-booking-status.dto';
+import { UpdateBookingMeetingLinkDto } from './dto/update-booking-meeting-link.dto';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { UserRole } from '../common/enums/role.enum';
@@ -72,10 +73,7 @@ export class BookingController {
   }
 
   @Post('payments/jazzcash/callback')
-  async jazzCashCallbackPost(
-    @Req() req: Request,
-    @Res() res: Response,
-  ) {
+  async jazzCashCallbackPost(@Req() req: Request, @Res() res: Response) {
     const result = await this.bookingService.handleJazzCashCallback(
       req.body as Record<string, unknown>,
     );
@@ -83,10 +81,7 @@ export class BookingController {
   }
 
   @Get('payments/jazzcash/callback')
-  async jazzCashCallbackGet(
-    @Req() req: Request,
-    @Res() res: Response,
-  ) {
+  async jazzCashCallbackGet(@Req() req: Request, @Res() res: Response) {
     const result = await this.bookingService.handleJazzCashCallback(
       req.query as Record<string, unknown>,
     );
@@ -112,6 +107,17 @@ export class BookingController {
     @Body() dto: UpdateBookingStatusDto,
   ) {
     return this.bookingService.updateStatus(id, dto, user);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.LAWYER, UserRole.ADMIN)
+  @Patch(':id/meeting-link')
+  updateMeetingLink(
+    @Param('id') id: string,
+    @CurrentUser() user: { userId: string; role: UserRole },
+    @Body() dto: UpdateBookingMeetingLinkDto,
+  ) {
+    return this.bookingService.updateMeetingLink(id, dto, user);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)

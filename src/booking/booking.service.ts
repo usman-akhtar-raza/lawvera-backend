@@ -19,6 +19,7 @@ import { User, UserDocument } from '../user/schemas/user.schema';
 import { CreateBookingDto } from './dto/create-booking.dto';
 import { BookingStatus } from '../common/enums/booking-status.enum';
 import { UpdateBookingStatusDto } from './dto/update-booking-status.dto';
+import { UpdateBookingMeetingLinkDto } from './dto/update-booking-meeting-link.dto';
 import { NotificationService } from '../common/services/notification.service';
 import { LawyerStatus } from '../common/enums/lawyer-status.enum';
 import { UserRole } from '../common/enums/role.enum';
@@ -148,7 +149,9 @@ export class BookingService {
       },
     });
 
-    booking.payment.billReference = this.buildBillReference(String(booking._id));
+    booking.payment.billReference = this.buildBillReference(
+      String(booking._id),
+    );
 
     const redirectToken = randomBytes(32).toString('hex');
     booking.payment.redirectTokenHash = this.hashValue(redirectToken);
@@ -248,7 +251,10 @@ export class BookingService {
 
     if (!booking) {
       return {
-        redirectUrl: this.buildFrontendReturnUrl(undefined, 'unknown_transaction'),
+        redirectUrl: this.buildFrontendReturnUrl(
+          undefined,
+          'unknown_transaction',
+        ),
       };
     }
 
@@ -544,11 +550,99 @@ export class BookingService {
     return booking;
   }
 
-  async cancelBooking(
+  async updateMeetingLink(
     bookingId: string,
-    actorUserId: string,
-    role: UserRole,
+    dto: UpdateBookingMeetingLinkDto,
+    actor: { userId: string; role: UserRole },
   ) {
+    const booking = await this.bookingModel
+      .findById(bookingId)
+      .populate('client', 'name email')
+      .populate({
+        path: 'lawyer',
+        select: 'user',
+        populate: { path: 'user', select: 'name email' },
+      });
+
+    if (!booking) {
+      throw new NotFoundException('Booking not found');
+    }
+
+    if (
+      booking.status === BookingStatus.AWAITING_PAYMENT ||
+      booking.status === BookingStatus.CANCELLED ||
+      booking.payment?.status !== PaymentStatus.SUCCEEDED
+    ) {
+      throw new BadRequestException(
+        'Meeting links can only be added to paid active bookings.',
+      );
+    }
+
+    if (booking.status === BookingStatus.COMPLETED) {
+      throw new BadRequestException(
+        'Meeting links cannot be changed after the appointment is completed.',
+      );
+    }
+
+    if (actor.role === UserRole.LAWYER) {
+      const lawyerProfile = await this.lawyerModel.findOne({
+        user: actor.userId,
+      });
+      const bookingLawyerId =
+        typeof booking.lawyer === 'object' &&
+        booking.lawyer !== null &&
+        '_id' in (booking.lawyer as object)
+          ? String((booking.lawyer as { _id: Types.ObjectId })._id)
+          : String(booking.lawyer);
+
+      if (!lawyerProfile || bookingLawyerId !== lawyerProfile._id.toString()) {
+        throw new UnauthorizedException();
+      }
+    } else if (!isAdminRole(actor.role)) {
+      throw new UnauthorizedException();
+    }
+
+    booking.meetingLink = dto.meetingLink.trim();
+    await booking.save();
+
+    const client =
+      typeof booking.client === 'object' && booking.client !== null
+        ? (booking.client as {
+            name?: string;
+            email?: string;
+            _id?: Types.ObjectId;
+          })
+        : null;
+    const lawyerProfile =
+      typeof booking.lawyer === 'object' && booking.lawyer !== null
+        ? (booking.lawyer as {
+            user?: { name?: string; email?: string; _id?: Types.ObjectId };
+          })
+        : null;
+    const lawyerUser = lawyerProfile?.user;
+
+    if (client?.email) {
+      await this.notificationService.sendBookingMeetingLinkEmail({
+        clientEmail: client.email,
+        clientName: client.name || 'Client',
+        lawyerName: lawyerUser?.name || 'Your lawyer',
+        meetingLink: booking.meetingLink,
+        slotDate: booking.slotDate,
+        slotTime: booking.slotTime,
+      });
+    }
+
+    if (client?._id) {
+      await this.notificationService.notifyClient(
+        String(client._id),
+        'Your lawyer has shared a meeting link for your appointment.',
+      );
+    }
+
+    return booking;
+  }
+
+  async cancelBooking(bookingId: string, actorUserId: string, role: UserRole) {
     const booking = await this.bookingModel.findById(bookingId);
     if (!booking) {
       throw new NotFoundException('Booking not found');
@@ -569,7 +663,8 @@ export class BookingService {
 
     booking.status = BookingStatus.CANCELLED;
     booking.payment.status = PaymentStatus.CANCELLED;
-    booking.payment.responseMessage = booking.payment.responseMessage || 'Cancelled';
+    booking.payment.responseMessage =
+      booking.payment.responseMessage || 'Cancelled';
     booking.payment.failedAt = booking.payment.failedAt || new Date();
     booking.payment.redirectTokenHash = undefined;
     booking.payment.redirectTokenExpiresAt = undefined;
@@ -625,7 +720,10 @@ export class BookingService {
     };
   }
 
-  private async assertBookingAccess(booking: BookingDocument, actor: CurrentActor) {
+  private async assertBookingAccess(
+    booking: BookingDocument,
+    actor: CurrentActor,
+  ) {
     if (isAdminRole(actor.role)) {
       return;
     }
@@ -708,7 +806,9 @@ export class BookingService {
   }
 
   private assertSlotMatchesAvailability(
-    lawyerProfile: LawyerProfile & { availability?: Array<{ day: string; slots: string[] }> },
+    lawyerProfile: LawyerProfile & {
+      availability?: Array<{ day: string; slots: string[] }>;
+    },
     slotDate: Date,
     slotTime: string,
   ) {
@@ -729,7 +829,9 @@ export class BookingService {
 
   private normalizeConsultationFee(value: number) {
     if (!Number.isFinite(value) || value <= 0) {
-      throw new BadRequestException('This lawyer has an invalid consultation fee.');
+      throw new BadRequestException(
+        'This lawyer has an invalid consultation fee.',
+      );
     }
 
     return Math.round(value * 100) / 100;
@@ -840,8 +942,7 @@ export class BookingService {
     const received = Buffer.from(receivedSecureHash.toLowerCase(), 'utf8');
 
     return (
-      expected.length === received.length &&
-      timingSafeEqual(expected, received)
+      expected.length === received.length && timingSafeEqual(expected, received)
     );
   }
 
@@ -1028,11 +1129,14 @@ export class BookingService {
   }
 
   private getJazzCashConfig(): JazzCashConfig {
-    const backendPublicUrl = this.configService.get<string>('BACKEND_PUBLIC_URL');
+    const backendPublicUrl =
+      this.configService.get<string>('BACKEND_PUBLIC_URL');
     const frontendAppUrl = this.configService.get<string>('FRONTEND_APP_URL');
     const merchantId = this.configService.get<string>('JAZZCASH_MERCHANT_ID');
     const password = this.configService.get<string>('JAZZCASH_PASSWORD');
-    const integritySalt = this.configService.get<string>('JAZZCASH_INTEGRITY_SALT');
+    const integritySalt = this.configService.get<string>(
+      'JAZZCASH_INTEGRITY_SALT',
+    );
     const gatewayUrl = this.configService.get<string>('JAZZCASH_GATEWAY_URL');
 
     if (

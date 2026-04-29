@@ -72,7 +72,8 @@ export class BookingPayment {
   failedAt?: Date;
 }
 
-export const BookingPaymentSchema = SchemaFactory.createForClass(BookingPayment);
+export const BookingPaymentSchema =
+  SchemaFactory.createForClass(BookingPayment);
 
 @Schema({ timestamps: true })
 export class Booking {
@@ -103,6 +104,9 @@ export class Booking {
 
   @Prop()
   notes?: string;
+
+  @Prop({ trim: true })
+  meetingLink?: string;
 
   @Prop({ type: BookingPaymentSchema, required: true })
   payment: BookingPayment;

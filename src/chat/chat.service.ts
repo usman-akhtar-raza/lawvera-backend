@@ -13,6 +13,112 @@ import { RetrievedChunk } from '../law-sources/law-sources.types';
 const NOT_FOUND_MESSAGE = 'I couldn\'t find this in the provided law books.';
 const GENERAL_LEGAL_DISCLAIMER =
   'This is general legal information, not a substitute for advice from a licensed lawyer.';
+const OUT_OF_SCOPE_MESSAGE =
+  'I’m here to help with legal information, legal research, and questions related to legal services on Lawvera. I’m not able to assist with non-legal topics here. If you have a legal question, a legal document, or a case-related issue, send it and I’ll help in a professional and practical way.';
+
+const LEGAL_SCOPE_KEYWORDS = [
+  'legal',
+  'law',
+  'lawyer',
+  'attorney',
+  'advocate',
+  'court',
+  'judge',
+  'case',
+  'contract',
+  'agreement',
+  'breach',
+  'notice',
+  'petition',
+  'affidavit',
+  'complaint',
+  'lawsuit',
+  'sue',
+  'appeal',
+  'bail',
+  'fir',
+  'police',
+  'crime',
+  'criminal',
+  'civil',
+  'divorce',
+  'custody',
+  'alimony',
+  'inheritance',
+  'will',
+  'probate',
+  'property',
+  'tenant',
+  'landlord',
+  'lease',
+  'rent',
+  'employment',
+  'termination',
+  'harassment',
+  'tax',
+  'compliance',
+  'regulation',
+  'license',
+  'permit',
+  'company',
+  'startup',
+  'incorporate',
+  'registration',
+  'trademark',
+  'copyright',
+  'patent',
+  'evidence',
+  'jurisdiction',
+  'rights',
+  'liability',
+  'damages',
+  'settlement',
+  'arbitration',
+  'mediation',
+  'consumer',
+  'visa',
+  'immigration',
+];
+
+const NON_LEGAL_TOPIC_KEYWORDS = [
+  'weather',
+  'temperature',
+  'recipe',
+  'cook',
+  'cooking',
+  'movie',
+  'film',
+  'song',
+  'music',
+  'lyrics',
+  'game',
+  'gaming',
+  'football',
+  'cricket',
+  'basketball',
+  'travel',
+  'flight',
+  'hotel',
+  'restaurant',
+  'diet',
+  'workout',
+  'exercise',
+  'math',
+  'algebra',
+  'physics',
+  'chemistry',
+  'programming',
+  'coding',
+  'code',
+  'javascript',
+  'python',
+  'react',
+  'nextjs',
+  'anime',
+  'fashion',
+  'makeup',
+  'horoscope',
+];
 
 const PREDEFINED_ANSWERS: Array<{
   questions: string[];
@@ -109,6 +215,27 @@ export class ChatService {
       .find({ sessionId, user: userId })
       .sort({ createdAt: 1 })
       .lean();
+
+    const isLegalScope = await this.isLegalScopeQuestion({
+      question: dto.message,
+      history,
+    });
+    if (!isLegalScope) {
+      await this.persistMessage(sessionId, userId, ChatRole.USER, dto.message);
+      await this.persistMessage(
+        sessionId,
+        userId,
+        ChatRole.ASSISTANT,
+        OUT_OF_SCOPE_MESSAGE,
+      );
+
+      return {
+        sessionId,
+        answer: OUT_OF_SCOPE_MESSAGE,
+        citations: [],
+        retrievedPreview: [],
+      };
+    }
 
     const mode: 'user' | 'lawyer' = dto.mode ?? (userRole === UserRole.LAWYER ? 'lawyer' : 'user');
 
@@ -385,6 +512,125 @@ export class ChatService {
       .replace(/[^a-z0-9\s]/g, ' ')
       .replace(/\s+/g, ' ')
       .trim();
+  }
+
+  private async isLegalScopeQuestion(params: {
+    question: string;
+    history: Array<{
+      role: ChatRole;
+      content: string;
+    }>;
+  }) {
+    const heuristicResult = this.classifyScopeHeuristically(
+      params.question,
+      params.history,
+    );
+    if (heuristicResult !== 'ambiguous') {
+      return heuristicResult === 'legal';
+    }
+
+    if (!this.openai) {
+      return false;
+    }
+
+    try {
+      const completion = await this.openai.chat.completions.create({
+        model: 'gpt-4o-mini',
+        temperature: 0,
+        response_format: { type: 'json_object' },
+        messages: [
+          {
+            role: 'system',
+            content: [
+              'You classify whether a user message is within Lawvera scope.',
+              'Return JSON only: {"isLegal":true} or {"isLegal":false}.',
+              'isLegal must be true only for legal information, legal research, legal documents, legal rights, legal procedures, regulatory/compliance matters, or questions about hiring/working with lawyers on the platform.',
+              'isLegal must be false for general knowledge, entertainment, health, coding, mathematics, travel, shopping, or any non-legal topic.',
+              'Use conversation history only to resolve short follow-up messages.',
+            ].join(' '),
+          },
+          {
+            role: 'user',
+            content: JSON.stringify({
+              question: params.question,
+              recentHistory: params.history.slice(-4).map((item) => ({
+                role: item.role,
+                content: item.content,
+              })),
+            }),
+          },
+        ],
+      });
+
+      const content = completion.choices[0]?.message?.content?.trim();
+      if (!content) {
+        return false;
+      }
+
+      const parsed = JSON.parse(content) as { isLegal?: boolean };
+      return parsed.isLegal === true;
+    } catch {
+      return false;
+    }
+  }
+
+  private classifyScopeHeuristically(
+    question: string,
+    history: Array<{
+      role: ChatRole;
+      content: string;
+    }>,
+  ) {
+    const normalizedQuestion = this.normalizeQuestion(question);
+    const questionLower = ` ${normalizedQuestion} `;
+    const hasLegalKeyword = LEGAL_SCOPE_KEYWORDS.some((keyword) =>
+      questionLower.includes(` ${keyword} `),
+    );
+    const hasNonLegalKeyword = NON_LEGAL_TOPIC_KEYWORDS.some((keyword) =>
+      questionLower.includes(` ${keyword} `),
+    );
+
+    if (hasLegalKeyword) {
+      return 'legal' as const;
+    }
+
+    if (hasNonLegalKeyword) {
+      return 'non_legal' as const;
+    }
+
+    const shortFollowUp =
+      normalizedQuestion.split(' ').length <= 6 &&
+      /^(and|what|how|why|when|where|can|should|would|could|is|are|do|does|did)\b/.test(
+        normalizedQuestion,
+      );
+
+    if (shortFollowUp) {
+      const recentText = history
+        .slice(-4)
+        .map((item) => this.normalizeQuestion(item.content))
+        .join(' ');
+      const recentLower = ` ${recentText} `;
+      const historyLooksLegal = LEGAL_SCOPE_KEYWORDS.some((keyword) =>
+        recentLower.includes(` ${keyword} `),
+      );
+
+      if (historyLooksLegal) {
+        return 'legal' as const;
+      }
+    }
+
+    if (
+      /\b(draft|review|summarize|explain|interpret|analyze)\b/.test(
+        normalizedQuestion,
+      ) &&
+      /\b(contract|agreement|notice|petition|affidavit|lease|policy|clause|document)\b/.test(
+        normalizedQuestion,
+      )
+    ) {
+      return 'legal' as const;
+    }
+
+    return 'ambiguous' as const;
   }
 
   private buildConservativeFallbackAnswer(question: string) {

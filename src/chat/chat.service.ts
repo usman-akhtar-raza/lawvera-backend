@@ -160,10 +160,7 @@ export class ChatService {
       retrievedPreview: retrievedChunks.slice(0, 4).map((chunk) => ({
         sourceTitle: chunk.sourceTitle,
         metadata: chunk.metadata,
-        snippet:
-          chunk.chunkText.length > 220
-            ? `${chunk.chunkText.slice(0, 217)}...`
-            : chunk.chunkText,
+        snippet: chunk.chunkText,
       })),
     };
   }

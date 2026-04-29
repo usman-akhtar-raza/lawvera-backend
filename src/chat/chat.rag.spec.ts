@@ -62,6 +62,9 @@ describe('ChatService RAG retrieval', () => {
       },
     ]);
     expect(result.retrievedPreview[0]?.sourceTitle).toBe('Contract Law Handbook');
+    expect(result.retrievedPreview[0]?.snippet).toBe(
+      'Offer and acceptance are core elements of contract formation.',
+    );
     expect(createMock).toHaveBeenCalledTimes(2);
   });
 
